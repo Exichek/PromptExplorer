@@ -322,7 +322,6 @@ class DB:
             );
         """)
 
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS types(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -331,7 +330,6 @@ class DB:
                 FOREIGN KEY(profile_id) REFERENCES profiles(id)
             );
         """)
-
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS prompts(
@@ -670,23 +668,19 @@ class StartupDialog(QDialog):
 
         self.profile_combo = QComboBox()
 
-
         self.btn_continue = QPushButton("Продолжить")
         self.btn_new = QPushButton("Создать новый профиль")
         self.btn_import = QPushButton("Импорт профиля (из БД)")
         self.btn_delete = QPushButton("Удалить профиль")
-
 
         self.btn_continue.clicked.connect(self.on_continue)
         self.btn_new.clicked.connect(self.on_new)
         self.btn_import.clicked.connect(self.on_import)
         self.btn_delete.clicked.connect(self.on_delete)
 
-
         layout = QVBoxLayout(self)
         layout.addWidget(self.info)
         layout.addWidget(self.profile_combo)
-
         row = QHBoxLayout()
         row.addWidget(self.btn_new)
         row.addWidget(self.btn_import)
@@ -745,7 +739,6 @@ class StartupDialog(QDialog):
 
         pid = self.db.create_profile(name, "light")
         self.reload_profiles()
-
 
         idx = self.profile_combo.findData(pid)
         if idx >= 0:
@@ -822,14 +815,12 @@ class StartupDialog(QDialog):
 
 class PromptDialog(QDialog):
 
-
     def __init__(self, types: list[str], icon: QIcon, theme: str, existing: Prompt | None = None):
         super().__init__()
 
         self.setWindowTitle("Редактировать промт" if existing else "Новый промт")
         self.setWindowIcon(icon)
         self.setStyleSheet(theme_qss(theme))
-
         # ---------------------------
         # Type combobox (editable + search)
         # ---------------------------
@@ -1141,7 +1132,6 @@ class MainWindow(QMainWindow):
         self.btn_edit = QPushButton("Редактировать")
         self.btn_del = QPushButton("Удалить")
         self.btn_export = QPushButton("Выгрузить .txt")
-
 
         self.btn_new.clicked.connect(self.create_prompt)
         self.btn_edit.clicked.connect(self.edit_prompt)
