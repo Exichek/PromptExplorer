@@ -279,7 +279,6 @@ def theme_qss(theme: str) -> str:
 
 @dataclass
 class Prompt:
-    """Объект промта"""
     id: int
     type: str
     name: str
@@ -312,7 +311,6 @@ class DB:
     def _init_schema(self) -> None:
         cur = self.conn.cursor()
 
-        # Профили
         cur.execute("""
             CREATE TABLE IF NOT EXISTS profiles(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -435,7 +433,6 @@ class DB:
 
         cur = self.conn.cursor()
 
-        # Проверка уникальности имени
         cur.execute("SELECT id FROM types WHERE profile_id=? AND name=?;", (profile_id, new_name))
         exists = cur.fetchone()
         if exists and int(exists["id"]) != type_id:
@@ -596,7 +593,6 @@ class DB:
                 raise ValueError("Profile not found")
             new_profile_id = self.create_profile(str(p["name"]), "light")
 
-        # узнаём структуру types (есть ли profile_id)
         ec.execute("PRAGMA table_info(types);")
         type_cols = [r["name"] for r in ec.fetchall()]
         has_type_profile = "profile_id" in type_cols
