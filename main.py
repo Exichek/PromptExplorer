@@ -322,7 +322,7 @@ class DB:
             );
         """)
 
-        # Типы/категории промтов (привязаны к профилю)
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS types(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -332,7 +332,7 @@ class DB:
             );
         """)
 
-        # Промты (привязаны к профилю и типу)
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS prompts(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -353,7 +353,7 @@ class DB:
 
         self.conn.commit()
 
-        # ---- Migrations for older DB versions (если вдруг) ----
+        # ---- Migrations for older DB versions ----
         if not self._col_exists("profiles", "theme"):
             cur.execute("ALTER TABLE profiles ADD COLUMN theme TEXT NOT NULL DEFAULT 'light';")
             self.conn.commit()
@@ -670,19 +670,19 @@ class StartupDialog(QDialog):
 
         self.profile_combo = QComboBox()
 
-        # Кнопки действия
+
         self.btn_continue = QPushButton("Продолжить")
         self.btn_new = QPushButton("Создать новый профиль")
         self.btn_import = QPushButton("Импорт профиля (из БД)")
         self.btn_delete = QPushButton("Удалить профиль")
 
-        # Сигналы
+
         self.btn_continue.clicked.connect(self.on_continue)
         self.btn_new.clicked.connect(self.on_new)
         self.btn_import.clicked.connect(self.on_import)
         self.btn_delete.clicked.connect(self.on_delete)
 
-        # Layout
+
         layout = QVBoxLayout(self)
         layout.addWidget(self.info)
         layout.addWidget(self.profile_combo)
@@ -746,7 +746,7 @@ class StartupDialog(QDialog):
         pid = self.db.create_profile(name, "light")
         self.reload_profiles()
 
-        # после создания сразу выбрать новый профиль
+
         idx = self.profile_combo.findData(pid)
         if idx >= 0:
             self.profile_combo.setCurrentIndex(idx)
@@ -790,7 +790,7 @@ class StartupDialog(QDialog):
             self.profile_combo.setCurrentIndex(idx)
 
     def on_delete(self) -> None:
-        """Удалить выбранный профиль."""
+
         pid = self.profile_combo.currentData()
         if pid is None:
             return
@@ -821,13 +821,7 @@ class StartupDialog(QDialog):
 # ============================================================
 
 class PromptDialog(QDialog):
-    """
-    Окно создания/редактирования промта.
 
-    Важное:
-    - Type сделан через QComboBox + поиск по подстроке
-    - Выпадашка открывается при вводе (и скрывается, если поле пустое)
-    """
 
     def __init__(self, types: list[str], icon: QIcon, theme: str, existing: Prompt | None = None):
         super().__init__()
@@ -1148,7 +1142,7 @@ class MainWindow(QMainWindow):
         self.btn_del = QPushButton("Удалить")
         self.btn_export = QPushButton("Выгрузить .txt")
 
-        # Важно: подключаем сигналы
+
         self.btn_new.clicked.connect(self.create_prompt)
         self.btn_edit.clicked.connect(self.edit_prompt)
         self.btn_del.clicked.connect(self.delete_prompt)
@@ -1406,7 +1400,7 @@ class MainWindow(QMainWindow):
         r = QMessageBox.question(
             self,
             "Удалить",
-            "Точно удалить этот промт?",
+            "Вы уверены?",
             QMessageBox.Yes | QMessageBox.No,
         )
         if r != QMessageBox.Yes:
