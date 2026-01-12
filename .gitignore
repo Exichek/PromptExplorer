@@ -1,0 +1,22 @@
+# Python bytecode
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Virtual environments
+.env
+.venv/
+
+# IDE settings
+.idea/
+.vscode/
+
+# Local databases (user data)
+*.db
+*.sqlite3
