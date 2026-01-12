@@ -49,11 +49,10 @@ from PySide6.QtWidgets import (
 APP_NAME = "PromptExplorer"
 ORG_NAME = "PromptExplorer"
 
-# Размеры иконки/кнопки темы (у тебя это финальный “нормальный” вариант)
-THEME_ICON_PX = 44          # размер картинки на кнопке
-THEME_BTN_SIZE = 48         # размер самой кнопки (чтобы не резало)
+THEME_ICON_PX = 44
+THEME_BTN_SIZE = 48
 
-# Где лежит БД (внутри app_data_dir)
+
 DB_FILENAME = "promptexplorer.sqlite3"
 
 
