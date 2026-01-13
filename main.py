@@ -565,7 +565,6 @@ class DB:
                 theme = r["theme"] if "theme" in r.keys() else "light"
                 res.append((int(r["id"]), str(r["name"]), str(theme)))
         except sqlite3.OperationalError:
-            # Очень старая база без theme
             cur.execute("SELECT id, name FROM profiles ORDER BY id ASC;")
             res = [(int(r["id"]), str(r["name"]), "light") for r in cur.fetchall()]
 
