@@ -8,9 +8,12 @@ __pycache__/
 build/
 dist/
 *.spec
+*.manifest
+*.toc
 
 # Virtual environments
 .env
+.env.*
 .venv/
 
 # IDE settings
@@ -20,3 +23,10 @@ dist/
 # Local databases (user data)
 *.db
 *.sqlite3
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
