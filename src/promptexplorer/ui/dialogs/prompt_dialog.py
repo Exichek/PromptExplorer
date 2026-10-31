@@ -1,26 +1,25 @@
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QScrollArea,
     QVBoxLayout,
-    QCompleter,
+    QWidget,
 )
 
-from ..models import Prompt
+from ...models import Prompt
 from ..utils import theme_qss
 
 
-# ============================================================
-# Dialog: Create / Edit prompt
-# ============================================================
-
 class PromptDialog(QDialog):
+    """Редактор промта с проверкой обязательных полей и прокруткой формы."""
 
     def __init__(self, types: list[str], icon: QIcon, theme: str, existing: Prompt | None = None):
         super().__init__()
@@ -28,17 +27,12 @@ class PromptDialog(QDialog):
         self.setWindowTitle("Редактировать промт" if existing else "Новый промт")
         self.setWindowIcon(icon)
         self.setStyleSheet(theme_qss(theme))
-        # ---------------------------
-        # Type combobox (editable + search)
-        # ---------------------------
+
         self.type = QComboBox()
         self.type.setEditable(True)
-        self.type.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)  # Qt6-правильно
+        self.type.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.type.setMaxVisibleItems(12)
         self.type.addItems(types)
-
-        if hasattr(self.type, "setAutoCompletion"):
-            self.type.setAutoCompletion(False)
 
         completer = QCompleter(self.type.model(), self.type)
         completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -46,11 +40,6 @@ class PromptDialog(QDialog):
         completer.setCompletionMode(QCompleter.PopupCompletion)
         self.type.setCompleter(completer)
 
-        le = self.type.lineEdit()
-        le.textEdited.connect(lambda txt: self.type.showPopup() if txt.strip() else self.type.hidePopup())
-        # ---------------------------
-        # Other fields
-        # ---------------------------
         self.name = QLineEdit()
         self.model = QLineEdit()
 
@@ -72,32 +61,35 @@ class PromptDialog(QDialog):
         self.description.setPlaceholderText("Описание: чтобы не запутаться, что это за промт")
         self.positive.setPlaceholderText("Positive: ключевые слова/теги, описание сцены")
         self.negative.setPlaceholderText("Negative: что исключить")
-        # ---------------------------
-        # Form layout
-        # ---------------------------
+
         form = QFormLayout()
-        form.addRow("Name:", self.name)
-        form.addRow("Type:", self.type)
-        form.addRow("Model:", self.model)
+        form.addRow("Название:", self.name)
+        form.addRow("Категория:", self.type)
+        form.addRow("Модель:", self.model)
         form.addRow("LoRA:", self.lora)
         form.addRow("Описание:", self.description)
         form.addRow("Positive:", self.positive)
         form.addRow("Negative:", self.negative)
 
-        # Save/Cancel
         self.buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        self.buttons.button(QDialogButtonBox.Save).setText("Сохранить")
+        self.buttons.button(QDialogButtonBox.Cancel).setText("Отмена")
         self.buttons.accepted.connect(self._validate_then_accept)
         self.buttons.rejected.connect(self.reject)
 
         root = QVBoxLayout(self)
-        root.addLayout(form)
+        fields = QWidget()
+        fields.setLayout(form)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(fields)
+        root.addWidget(scroll)
         root.addWidget(self.buttons)
+        self.setMinimumWidth(500)
+        self.resize(700, 720)
+        save_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
+        save_shortcut.activated.connect(self._validate_then_accept)
 
-        self.setMinimumWidth(640)
-
-        # ---------------------------
-        # If editing — prefill the fields
-        # ---------------------------
         self.prompt_id: int | None = None
         if existing:
             self.prompt_id = existing.id
@@ -108,16 +100,31 @@ class PromptDialog(QDialog):
             self.description.setPlainText(existing.description)
             self.positive.setPlainText(existing.positive)
             self.negative.setPlainText(existing.negative)
+        self._initial_data = self.data()
+
+    def reject(self) -> None:
+        """Предупредить о потере несохранённых изменений при закрытии редактора."""
+        if self.data() != self._initial_data:
+            answer = QMessageBox.question(
+                self,
+                "Несохранённые изменения",
+                "Закрыть редактор без сохранения?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+        super().reject()
 
     def _validate_then_accept(self) -> None:
         if not self.name.text().strip():
-            QMessageBox.warning(self, "Допиши", "Поле Name не заполнено.")
+            QMessageBox.warning(self, "Проверьте поля", "Укажите название промта.")
             return
         if not self.type.currentText().strip():
-            QMessageBox.warning(self, "Допиши", "Поле Type не заполнено.")
+            QMessageBox.warning(self, "Проверьте поля", "Укажите категорию.")
             return
         if not self.model.text().strip():
-            QMessageBox.warning(self, "Допиши", "Поле Model не заполнено.")
+            QMessageBox.warning(self, "Проверьте поля", "Укажите модель.")
             return
         self.accept()
 
