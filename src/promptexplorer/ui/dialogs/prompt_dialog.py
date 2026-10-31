@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
@@ -19,7 +20,7 @@ from ..utils import theme_qss
 
 
 class PromptDialog(QDialog):
-    """Редактор промта с проверкой обязательных полей и прокруткой формы."""
+    """Редактор промта, в котором обязательно только название."""
 
     def __init__(self, types: list[str], icon: QIcon, theme: str, existing: Prompt | None = None):
         super().__init__()
@@ -33,6 +34,7 @@ class PromptDialog(QDialog):
         self.type.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.type.setMaxVisibleItems(12)
         self.type.addItems(types)
+        self.type.setCurrentIndex(-1)
 
         completer = QCompleter(self.type.model(), self.type)
         completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -54,8 +56,8 @@ class PromptDialog(QDialog):
         self.negative.setMinimumHeight(170)
 
         self.name.setPlaceholderText("Пример: Dragon")
-        self.type.setPlaceholderText("Пример: Cowgirl pose")
-        self.model.setPlaceholderText("Пример: Xavier")
+        self.type.setPlaceholderText("Необязательно — Без категории")
+        self.model.setPlaceholderText("Необязательно, например SDXL")
 
         self.lora.setPlaceholderText("Через запятую или построчно")
         self.description.setPlaceholderText("Описание: чтобы не запутаться, что это за промт")
@@ -63,7 +65,7 @@ class PromptDialog(QDialog):
         self.negative.setPlaceholderText("Negative: что исключить")
 
         form = QFormLayout()
-        form.addRow("Название:", self.name)
+        form.addRow("Название *:", self.name)
         form.addRow("Категория:", self.type)
         form.addRow("Модель:", self.model)
         form.addRow("LoRA:", self.lora)
@@ -78,6 +80,10 @@ class PromptDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
 
         root = QVBoxLayout(self)
+        hint = QLabel("Обязательно только название. Остальное можно заполнить позже.")
+        hint.setWordWrap(True)
+        hint.setObjectName("Hint")
+        root.addWidget(hint)
         fields = QWidget()
         fields.setLayout(form)
         scroll = QScrollArea()
@@ -120,12 +126,6 @@ class PromptDialog(QDialog):
         if not self.name.text().strip():
             QMessageBox.warning(self, "Проверьте поля", "Укажите название промта.")
             return
-        if not self.type.currentText().strip():
-            QMessageBox.warning(self, "Проверьте поля", "Укажите категорию.")
-            return
-        if not self.model.text().strip():
-            QMessageBox.warning(self, "Проверьте поля", "Укажите модель.")
-            return
         self.accept()
 
     def data(self) -> dict[str, str]:
@@ -134,7 +134,7 @@ class PromptDialog(QDialog):
             "name": self.name.text().strip(),
             "model": self.model.text().strip(),
             "lora": self.lora.toPlainText().strip(),
-            "description": self.description.toPlainText().strip() or "(без описания)",
+            "description": self.description.toPlainText().strip(),
             "positive": self.positive.toPlainText().strip(),
             "negative": self.negative.toPlainText().strip(),
         }

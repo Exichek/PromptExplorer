@@ -13,8 +13,24 @@ from .constants import APP_NAME, DB_FILENAME, ORG_NAME, THEME_ICON_PX
 from .db import DB
 from .paths import app_data_dir
 from .ui.dialogs.startup_dialog import StartupDialog
+from .ui.image_preview import thumbnail_from_file
 from .ui.main_window import MainWindow
 from .ui.utils import center_dialog, load_hidpi_icon, resource_path, theme_qss
+
+
+def _close_smoke_window(app: QApplication, window: MainWindow) -> None:
+    """Проверить настоящий диалог выхода в изолированном запуске сборки."""
+
+    def confirm():
+        dialog = app.activeModalWidget()
+        if not isinstance(dialog, QMessageBox):
+            app.exit(1)
+            return
+        dialog.button(QMessageBox.Yes).click()
+
+    QTimer.singleShot(0, confirm)
+    if not window.close():
+        app.exit(1)
 
 
 def main() -> int:
@@ -22,6 +38,9 @@ def main() -> int:
     if "--version" in sys.argv:
         print(f"{APP_NAME} {__version__}")
         return 0
+    if "--smoke-test" in sys.argv:
+        # Автоматическая проверка не открывает окна поверх других приложений.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     app = QApplication(sys.argv)
     app.setOrganizationName(ORG_NAME)
     app.setApplicationName(APP_NAME)
@@ -104,7 +123,10 @@ def main() -> int:
             if window.list.count() != 1 or icon.isNull():
                 raise RuntimeError("Проверка сборки: промт или ресурсы недоступны.")
             window.toggle_theme()
-            QTimer.singleShot(350, app.quit)
+            window.save_preview(thumbnail_from_file(resource_path("resources/moon.png")))
+            if window.preview.image.pixmap().isNull():
+                raise RuntimeError("Проверка сборки: превью недоступно.")
+            QTimer.singleShot(350, lambda: _close_smoke_window(app, window))
         return app.exec()
     except Exception:
         if sys.excepthook is not previous_hook:

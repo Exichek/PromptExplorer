@@ -3,6 +3,7 @@
 import pytest
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QMessageBox
 
 from promptexplorer.ui.dialogs.prompt_dialog import PromptDialog
 from promptexplorer.ui.dialogs.startup_dialog import StartupDialog
@@ -11,7 +12,7 @@ from promptexplorer.ui.utils import resource_path
 
 
 @pytest.fixture
-def window(qapp, db, tmp_path):
+def window(qapp, db, tmp_path, monkeypatch):
     profile = db.create_profile("Работа")
     for name, category in [("Первый", "Природа"), ("Второй", "Природа"), ("Третий", "Портрет")]:
         db.upsert_prompt(profile, None, category, name, "", f"Свет {name}", "Шум", "", "Модель")
@@ -20,7 +21,9 @@ def window(qapp, db, tmp_path):
     widget.show()
     qapp.processEvents()
     yield widget
-    widget.close()
+    with monkeypatch.context() as cleanup:
+        cleanup.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+        widget.close()
     widget.deleteLater()
     qapp.processEvents()
 
@@ -75,12 +78,50 @@ def test_saved_prompt_is_visible_after_category_change(window):
     assert window.search.text() == ""
 
 
-def test_theme_and_geometry_are_saved(window):
+def test_theme_and_geometry_are_saved(window, monkeypatch):
     window.toggle_theme()
     assert window.settings.value("ui_theme") == "dark"
-    window.close()
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+    assert window.close()
     assert window.settings.value("window_geometry")
     assert window.settings.value("splitter_state")
+
+
+@pytest.mark.parametrize("answer", [QMessageBox.Yes, QMessageBox.No, QMessageBox.NoButton])
+def test_main_window_closes_only_after_confirmation(window, monkeypatch, answer):
+    """Отмена выхода сохраняет окно и настройки; подтверждение разрешает закрытие."""
+    questions = []
+
+    def respond(*args):
+        questions.append(args)
+        return answer
+
+    monkeypatch.setattr(QMessageBox, "question", respond)
+    accepted = answer == QMessageBox.Yes
+    assert window.close() == accepted
+    assert window.isVisible() != accepted
+    assert questions[0][2] == "Вы точно хотите закрыть PromptExplorer?"
+    assert questions[0][-1] == QMessageBox.No
+    assert window.settings.contains("window_geometry") == accepted
+    assert window.settings.contains("splitter_state") == accepted
+
+
+def test_escape_cancels_real_exit_dialog(window, qapp):
+    """Escape закрывает вопрос, но оставляет главное окно программы открытым."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtTest import QTest
+
+    observed = []
+
+    def cancel():
+        dialog = qapp.activeModalWidget()
+        observed.append(isinstance(dialog, QMessageBox))
+        QTest.keyClick(dialog, Qt.Key_Escape)
+
+    QTimer.singleShot(0, cancel)
+    assert not window.close()
+    assert observed == [True]
+    assert window.isVisible()
 
 
 def test_resources_and_dialogs(qapp, db, tmp_path, monkeypatch):
@@ -135,3 +176,91 @@ def test_resources_in_frozen_package(tmp_path, monkeypatch):
     resource.write_bytes(b"icon")
     monkeypatch.setattr(utils, "__file__", str(package / "ui/utils.py"))
     assert utils.resource_path("resources/app.ico") == str(resource)
+
+
+@pytest.mark.parametrize("categories", [[], ["Портреты", "Пейзажи"]])
+def test_prompt_with_only_name_can_be_saved(qapp, db, monkeypatch, categories):
+    """Пустые дополнительные поля не мешают ни созданию, ни сохранению промта."""
+    from PySide6.QtWidgets import QDialog
+
+    def unexpected_warning(*args):
+        pytest.fail("Дополнительные поля не должны вызывать предупреждение")
+
+    monkeypatch.setattr(QMessageBox, "warning", unexpected_warning)
+    dialog = PromptDialog(categories, QIcon(), "light")
+    dialog.name.setText("Только название")
+    dialog._validate_then_accept()
+    assert dialog.result() == QDialog.Accepted
+    assert dialog.data()["type_name"] == ""
+    assert dialog.data()["model"] == ""
+    assert dialog.data()["description"] == ""
+    profile = db.create_profile("Работа")
+    pid = db.upsert_prompt(profile, None, **dialog.data())
+    saved = db.get_prompt(pid, profile)
+    assert saved.name == "Только название"
+    assert saved.type == "Без категории"
+    assert saved.model == saved.description == saved.positive == saved.negative == saved.lora == ""
+    editing = PromptDialog([saved.type], QIcon(), "light", saved)
+    editing.name.setText("Новое название")
+    editing._validate_then_accept()
+    assert editing.result() == QDialog.Accepted
+    db.upsert_prompt(profile, pid, **editing.data())
+    assert db.get_prompt(pid, profile).name == "Новое название"
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_empty_prompt_name_is_still_required(qapp, monkeypatch, name):
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    dialog = PromptDialog([], QIcon(), "light")
+    dialog.name.setText(name)
+    dialog._validate_then_accept()
+    assert warnings == ["Укажите название промта."]
+    assert dialog.result() == 0
+
+
+def test_preview_upload_switch_and_remove(window, qapp, tmp_path, monkeypatch):
+    """Превью привязано к записи, а не к исходному файлу или текущему виджету."""
+    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtWidgets import QFileDialog
+
+    path = tmp_path / "арт.png"
+    image = QImage(700, 900, QImage.Format_RGB32)
+    image.fill(QColor("#6a4389"))
+    assert image.save(str(path))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: (str(path), ""))
+    selected = window.selected_prompt_id()
+    window.preview.choose_image()
+    assert not window.preview.image.pixmap().isNull()
+    data = window.db.get_prompt(selected, window.profile_id).preview
+    assert data
+    path.unlink()
+    window.list.setCurrentRow(1)
+    assert window.preview.image.pixmap().isNull()
+    assert not window.preview.remove.isEnabled()
+    window.select_prompt(selected)
+    assert not window.preview.image.pixmap().isNull()
+    window.preview.remove.click()
+    assert window.db.get_prompt(selected, window.profile_id).preview is None
+    assert window.preview.image.pixmap().isNull()
+    window.search.setText("нет такого промта")
+    window.refresh_list()
+    assert not window.preview.upload.isEnabled()
+
+
+def test_invalid_image_keeps_saved_preview(window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from promptexplorer.ui.image_preview import thumbnail_from_file
+
+    saved = thumbnail_from_file(resource_path("resources/moon.png"))
+    window.save_preview(saved)
+    path = tmp_path / "ошибка.png"
+    path.write_text("Это не картинка", encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: (str(path), ""))
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    selected = window.selected_prompt_id()
+    window.preview.choose_image()
+    assert warnings
+    assert window.db.get_prompt(selected, window.profile_id).preview == saved

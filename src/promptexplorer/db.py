@@ -11,7 +11,8 @@ from uuid import uuid4
 from .models import Prompt
 from .paths import now_iso
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 FIELDS = (
     "name",
     "description",
@@ -22,9 +23,10 @@ FIELDS = (
     "created_at",
     "updated_at",
 )
-SELECT = """SELECT p.id,t.name AS type,p.name,p.description,p.positive,p.negative,
-    p.lora,p.model,p.created_at,p.updated_at FROM prompts p
-    JOIN types t ON t.id=p.type_id AND t.profile_id=p.profile_id"""
+COLUMNS = "p.id,t.name AS type,p.name,p.description,p.positive,p.negative,p.lora,p.model,p.created_at,p.updated_at"
+PROMPTS_FROM = " FROM prompts p JOIN types t ON t.id=p.type_id AND t.profile_id=p.profile_id"
+SELECT = "SELECT " + COLUMNS + PROMPTS_FROM
+SELECT_WITH_PREVIEW = "SELECT " + COLUMNS + ",p.preview" + PROMPTS_FROM
 
 
 def _snapshot(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
@@ -42,7 +44,7 @@ def _snapshot(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         actual = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if not columns <= actual:
             raise ValueError(f"Неподдерживаемая структура таблицы {table}.")
-        optional = {"profiles": {"theme"}, "types": {"profile_id"}, "prompts": set()}
+        optional = {"profiles": {"theme"}, "types": {"profile_id"}, "prompts": {"preview"}}
         if actual - columns - optional[table]:
             raise ValueError(f"Неизвестные поля таблицы {table}; файл не изменён.")
         result[table] = [dict(r) for r in conn.execute(f"SELECT * FROM {table}")]
@@ -117,7 +119,7 @@ class DB:
                profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                type_id INTEGER NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL,
                positive TEXT NOT NULL,negative TEXT NOT NULL,lora TEXT NOT NULL,model TEXT NOT NULL,
-               created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+               created_at TEXT NOT NULL,updated_at TEXT NOT NULL,preview BLOB,
                FOREIGN KEY(type_id,profile_id) REFERENCES types(id,profile_id) ON DELETE CASCADE)""",
             "CREATE INDEX prompts_profile_updated ON prompts(profile_id,updated_at DESC,id DESC)",
             "CREATE INDEX prompts_profile_type ON prompts(profile_id,type_id)",
@@ -147,10 +149,18 @@ class DB:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             source = Path(self.path)
             self.last_migration_backup = self.backup_to(
-                source.with_name(f"{source.stem}.before-v1-{stamp}-{uuid4().hex[:8]}.sqlite3")
+                source.with_name(
+                    f"{source.stem}.before-v{SCHEMA_VERSION}-{stamp}-{uuid4().hex[:8]}.sqlite3"
+                )
             )
         with self._transaction():
             data = _snapshot(self.conn)
+            if version == 1:
+                if self.conn.execute("PRAGMA foreign_key_check").fetchone():
+                    raise ValueError("В базе нарушены связи данных. Обновление отменено.")
+                self.conn.execute("ALTER TABLE prompts ADD COLUMN preview BLOB")
+                self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                return
             for table in ("prompts", "types", "profiles"):
                 self.conn.execute(f"DROP TABLE {table}")
             self._create_schema()
@@ -281,7 +291,9 @@ class DB:
         ]
 
     def get_prompt(self, prompt_id: int | None, profile_id: int | None = None) -> Prompt | None:
-        sql, args = SELECT + " WHERE p.id=?", [prompt_id]
+        # Картинку загружаем только для выбранного промта, а не для всего списка.
+        sql = SELECT_WITH_PREVIEW + " WHERE p.id=?"
+        args = [prompt_id]
         if profile_id is not None:
             sql += " AND p.profile_id=?"
             args.append(profile_id)
@@ -292,9 +304,33 @@ class DB:
         self, profile_id: int, type_id: int, data: dict[str, Any], prompt_id: int | None = None
     ) -> int:
         return self.conn.execute(
-            "INSERT INTO prompts(id,profile_id,type_id,name,description,positive,negative,lora,model,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (prompt_id, profile_id, type_id, *(data[field] for field in FIELDS)),
+            "INSERT INTO prompts(id,profile_id,type_id,name,description,positive,negative,lora,model,created_at,updated_at,preview) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                prompt_id,
+                profile_id,
+                type_id,
+                *(data[field] for field in FIELDS),
+                self._validate_preview(data.get("preview")),
+            ),
         ).lastrowid
+
+    @staticmethod
+    def _validate_preview(value: bytes | None) -> bytes | None:
+        """Ограничить размер миниатюры без зависимости хранилища от Qt."""
+        if value is not None and (not isinstance(value, bytes) or len(value) > MAX_PREVIEW_BYTES):
+            raise ValueError("Превью должно быть изображением размером не больше 4 МБ.")
+        return value
+
+    def set_prompt_preview(self, profile_id: int, prompt_id: int, preview: bytes | None) -> None:
+        """Привязать или удалить превью только у промта выбранного профиля."""
+        preview = self._validate_preview(preview)
+        with self._transaction():
+            cursor = self.conn.execute(
+                "UPDATE prompts SET preview=?,updated_at=? WHERE id=? AND profile_id=?",
+                (preview, now_iso(), prompt_id, profile_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Промт не найден в выбранном профиле.")
 
     def upsert_prompt(
         self,
@@ -313,7 +349,7 @@ class DB:
             name = self._name(name)
             if prompt_id is not None and self.get_prompt(prompt_id, profile_id) is None:
                 raise ValueError("Промт не найден в выбранном профиле.")
-            type_id = self._type_id(profile_id, type_name)
+            type_id = self._type_id(profile_id, type_name.strip() or "Без категории")
             timestamp = now_iso()
             values = (name, description, positive, negative, lora, model, timestamp)
             if prompt_id is None:

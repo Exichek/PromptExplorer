@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from PySide6.QtCore import QPoint, QSettings, QSize, Qt, QTimer
-from PySide6.QtGui import QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -34,6 +34,7 @@ from ..db import DB
 from ..models import Prompt
 from ..paths import now_iso
 from .dialogs.prompt_dialog import PromptDialog
+from .image_preview import ImagePreview
 from .utils import center_dialog, theme_qss
 
 
@@ -92,7 +93,18 @@ class MainWindow(QMainWindow):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(callback)
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Закрыть программу только после подтверждения пользователя."""
+        answer = QMessageBox.question(
+            self,
+            "Закрыть программу?",
+            "Вы точно хотите закрыть PromptExplorer?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            event.ignore()
+            return
         self.settings.setValue("window_geometry", self.saveGeometry())
         self.settings.setValue("splitter_state", self.splitter.saveState())
         event.accept()
@@ -277,7 +289,13 @@ class MainWindow(QMainWindow):
         copy_row.addWidget(self.copy_negative)
         copy_row.addStretch()
         r.addLayout(copy_row)
-        r.addWidget(self.detail)
+        details = QHBoxLayout()
+        self.preview = ImagePreview()
+        self.preview.image_selected.connect(self.save_preview)
+        self.preview.remove_requested.connect(lambda: self.save_preview(None))
+        details.addWidget(self.detail, 1)
+        details.addWidget(self.preview)
+        r.addLayout(details, 1)
 
         splitter.addWidget(self._wrap_card(left_col))
         splitter.addWidget(self._wrap_card(middle))
@@ -460,6 +478,7 @@ class MainWindow(QMainWindow):
         for button in (self.btn_edit, self.btn_del, self.copy_positive, self.copy_negative):
             button.setEnabled(current is not None)
         if not current:
+            self.preview.set_image(None, enabled=False)
             self.detail.setPlainText(
                 "Ничего не найдено." if self.search.text() else "Создайте промт."
             )
@@ -467,6 +486,21 @@ class MainWindow(QMainWindow):
         pid = int(current.data(Qt.UserRole))
         p = self.db.get_prompt(pid, self.profile_id)
         self.detail.setPlainText(self.render_prompt_text(p) if p else "Промт не найден.")
+        self.preview.set_image(p.preview if p else None, enabled=p is not None)
+
+    def save_preview(self, data: bytes | None) -> None:
+        """Сохранить картинку выбранного промта и обновить миниатюру после успеха."""
+        pid = self.selected_prompt_id()
+        if pid is None:
+            return
+        try:
+            self.db.set_prompt_preview(self.profile_id, pid, data)
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Не удалось сохранить превью")
+            QMessageBox.critical(self, "Ошибка сохранения превью", str(exc))
+            return
+        self.preview.set_image(data)
+        self.statusBar().showMessage("Превью сохранено" if data else "Превью удалено", 2500)
 
     def selected_prompt_id(self) -> int | None:
         item = self.list.currentItem()

@@ -135,7 +135,7 @@ def test_failed_migration_rolls_back_schema_and_data(legacy_db):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == 0
         assert conn.execute("SELECT count(*) FROM prompts").fetchone()[0] == 2
         assert "profile_id" not in {r[1] for r in conn.execute("PRAGMA table_info(types)")}
-    assert list(legacy_db.parent.glob("*.before-v1-*.sqlite3"))
+    assert list(legacy_db.parent.glob("*.before-v*-*.sqlite3"))
 
 
 def test_legacy_import_preserves_source_and_selected_profile(db, legacy_db):
@@ -207,3 +207,14 @@ def test_migration_refuses_unknown_fields_without_data_loss(legacy_db):
     with pytest.raises(ValueError):
         DB(str(legacy_db))
     assert fingerprint(legacy_db) == before
+
+
+@pytest.mark.parametrize("category", ["", "   "])
+def test_empty_category_is_optional_and_survives_reopen(db, category):
+    profile = db.create_profile("Работа")
+    pid = db.upsert_prompt(profile, None, category, "Название", "", "", "", "", "")
+    with closing(DB(db.path)) as reopened:
+        saved = reopened.get_prompt(pid, profile)
+        assert saved.name == "Название"
+        assert saved.type == "Без категории"
+        assert saved.model == ""
