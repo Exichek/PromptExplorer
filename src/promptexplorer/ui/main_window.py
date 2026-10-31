@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QTabWidget,
-    QTextEdit,
     QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
@@ -35,6 +34,7 @@ from ..models import Prompt
 from ..paths import now_iso
 from .dialogs.prompt_dialog import PromptDialog
 from .image_preview import ImagePreview
+from .prompt_details import PromptDetails
 from .utils import center_dialog, theme_qss
 
 
@@ -261,8 +261,10 @@ class MainWindow(QMainWindow):
         right = QWidget()
         r = QVBoxLayout(right)
 
-        self.detail = QTextEdit()
-        self.detail.setReadOnly(True)
+        self.detail = PromptDetails()
+        self.detail.copied.connect(
+            lambda: self.statusBar().showMessage("Скопировано в буфер обмена", 2500)
+        )
 
         btn_row = QHBoxLayout()
         self.btn_new = QPushButton("Создать")
@@ -280,15 +282,8 @@ class MainWindow(QMainWindow):
         btn_row.addStretch(1)
 
         r.addLayout(btn_row)
-        copy_row = QHBoxLayout()
-        self.copy_positive = QPushButton("Копировать Positive")
-        self.copy_negative = QPushButton("Копировать Negative")
-        self.copy_positive.clicked.connect(lambda: self.copy_prompt_field("positive"))
-        self.copy_negative.clicked.connect(lambda: self.copy_prompt_field("negative"))
-        copy_row.addWidget(self.copy_positive)
-        copy_row.addWidget(self.copy_negative)
-        copy_row.addStretch()
-        r.addLayout(copy_row)
+        self.copy_positive = self.detail.sections["positive"].copy_button
+        self.copy_negative = self.detail.sections["negative"].copy_button
         details = QHBoxLayout()
         self.preview = ImagePreview()
         self.preview.image_selected.connect(self.save_preview)
@@ -485,7 +480,10 @@ class MainWindow(QMainWindow):
             return
         pid = int(current.data(Qt.UserRole))
         p = self.db.get_prompt(pid, self.profile_id)
-        self.detail.setPlainText(self.render_prompt_text(p) if p else "Промт не найден.")
+        if p:
+            self.detail.set_prompt(p)
+        else:
+            self.detail.setPlainText("Промт не найден.")
         self.preview.set_image(p.preview if p else None, enabled=p is not None)
 
     def save_preview(self, data: bytes | None) -> None:
