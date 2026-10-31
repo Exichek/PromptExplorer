@@ -46,33 +46,37 @@ def load_hidpi_icon(filename: str, logical_size: int) -> QIcon | None:
 
 def theme_qss(theme: str) -> str:
     if theme == "dark":
-        bg = "#121212"
-        card = "#1b1b1b"
-        field = "#181818"
-        border = "#2a2a2a"
-        text = "#e7e7e7"
-        hint = "#bdbdbd"
-        tab_bg = "#171717"
-        tab_sel = "#1f1f1f"
-        hover = "#202020"
-        sel_bg = "#2f4d7a"
+        bg = "#15171c"
+        card = "#23262d"
+        field = "#1b1e24"
+        border = "#343943"
+        text = "#e8eaf0"
+        hint = "#a0a8b8"
+        tab_bg = "#1b1e24"
+        tab_sel = "#2c3441"
+        hover = "#303744"
+        sel_bg = "#294562"
         sel_text = "#ffffff"
-        splitter = "#2a2a2a"
-        menu_bg = "#1d1d1d"
+        splitter = "#343943"
+        menu_bg = "#23262d"
+        accent = "#82c8ff"
+        badge_bg = "#223b50"
     else:
-        bg = "#f3f3f3"
+        bg = "#eef1f6"
         card = "#ffffff"
-        field = "#ffffff"
-        border = "#dcdcdc"
-        text = "#111111"
-        hint = "#222222"
+        field = "#f7f9fc"
+        border = "#dce2eb"
+        text = "#252936"
+        hint = "#697386"
         tab_bg = "#f7f7f7"
         tab_sel = "#ffffff"
         hover = "#f6f6f6"
-        sel_bg = "#cfe5ff"
+        sel_bg = "#dceeff"
         sel_text = "#000000"
         splitter = "#e5e5e5"
         menu_bg = "#ffffff"
+        accent = "#22689c"
+        badge_bg = "#e3f0fb"
 
     return f"""
     QWidget {{
@@ -116,8 +120,8 @@ def theme_qss(theme: str) -> str:
         background: {card};
         border: 1px solid {border};
         border-radius: 10px;
-        padding: 8px 12px;
-        min-height: 34px;
+        padding: 6px 10px;
+        min-height: 28px;
     }}
     QPushButton:hover {{
         background: {hover};
@@ -126,7 +130,7 @@ def theme_qss(theme: str) -> str:
         background: {field};
     }}
 
-    /* Theme toggle button */
+    /* Переключение темы */
     QPushButton#ThemeBtn {{
         min-height: 0px;
         padding: 0px;
@@ -202,4 +206,30 @@ def theme_qss(theme: str) -> str:
         background: transparent;
         spacing: 8px;
     }}
+
+    QScrollArea#PromptDetails {{
+        background: {card};
+        border: 1px solid {border};
+        border-radius: 12px;
+    }}
+    QWidget#PromptSurface {{ background: {card}; }}
+    QLabel#PromptTitle {{ font-size: 17pt; font-weight: 600; color: {text}; }}
+    QLabel#SectionTitle {{ font-size: 11pt; font-weight: 600; color: {text}; }}
+    QLabel#PromptText {{ color: {hint}; }}
+    QLabel#ResourceName {{ color: {text}; }}
+    QLabel#ResourceBadge {{
+        background: {badge_bg}; color: {accent}; border-radius: 4px;
+        padding: 3px 7px; font-size: 8pt; font-weight: 600;
+    }}
+    QFrame#SectionSeparator {{ background: {border}; border: none; }}
+    QPushButton#CopyButton, QPushButton#TextToggle {{
+        color: {accent}; background: transparent; border: none;
+        min-height: 20px; padding: 2px 4px; font-size: 9pt;
+    }}
+    QPushButton#CopyButton:hover, QPushButton#TextToggle:hover {{ background: {badge_bg}; }}
+    QPushButton#CopyButton:disabled {{ color: {hint}; }}
+    QScrollBar:vertical {{ background: {card}; width: 9px; margin: 0px; }}
+    QScrollBar::handle:vertical {{ background: {border}; border-radius: 4px; min-height: 28px; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
     """

@@ -98,6 +98,19 @@ def main():
             art_path = Path(folder) / "example.png"
             art.save(str(art_path))
             selected = next(p.id for p in db.list_prompts(profile) if p.name == "Ночной город")
+            db.upsert_prompt(
+                profile,
+                selected,
+                "Пейзажи",
+                "Ночной город",
+                "Мягкий свет, отражения на мокром асфальте и спокойная ночная атмосфера.",
+                "cinematic cityscape, rain-soaked avenue, warm window light, deep blue sky, "
+                "quiet streets, subtle reflections, architectural photography, soft shadows, "
+                "atmospheric perspective, detailed facades, balanced composition, film grain",
+                "blurry, low quality, harsh contrast, oversaturated colors, artifacts",
+                "architectural-detail:0.6\nnight-lighting:0.4",
+                "SDXL 1.0",
+            )
             window.select_prompt(selected)
             window.save_preview(thumbnail_from_file(str(art_path)))
             app.processEvents()
@@ -105,6 +118,19 @@ def main():
             window.toggle_theme()
             app.processEvents()
             window.grab().save(str(output / "PromptExplorer-dark.png"))
+            square = art.copy(0, 64, 512, 512)
+            square_path = Path(folder) / "square.png"
+            square.save(str(square_path))
+            window.save_preview(thumbnail_from_file(str(square_path)))
+            app.processEvents()
+            window.grab().save(str(output / "PromptExplorer-square.png"))
+            landscape = art.copy(0, 200, 512, 256)
+            landscape_path = Path(folder) / "landscape.png"
+            landscape.save(str(landscape_path))
+            window.save_preview(thumbnail_from_file(str(landscape_path)))
+            app.processEvents()
+            window.grab().save(str(output / "PromptExplorer-landscape.png"))
+            window.save_preview(thumbnail_from_file(str(art_path)))
             window.tabs.setCurrentIndex(1)
             app.processEvents()
             window.grab().save(str(output / "PromptExplorer-stats.png"))

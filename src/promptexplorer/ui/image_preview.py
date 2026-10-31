@@ -57,7 +57,7 @@ class ImagePreview(QWidget):
         self.image = QLabel("Превью не добавлено")
         self.image.setAlignment(Qt.AlignCenter)
         self.image.setWordWrap(True)
-        self.image.setFixedSize(220, 260)
+        self.image.setFixedSize(220, 220)
         self.image.setObjectName("Preview")
         self.upload = QPushButton("Загрузить")
         self.remove = QPushButton("Убрать")
@@ -68,7 +68,7 @@ class ImagePreview(QWidget):
         buttons.addWidget(self.upload)
         buttons.addWidget(self.remove)
         layout.addWidget(title)
-        layout.addWidget(self.image)
+        layout.addWidget(self.image, 0, Qt.AlignHCenter)
         layout.addLayout(buttons)
         layout.addStretch()
         self.set_image(None, enabled=False)
@@ -81,11 +81,15 @@ class ImagePreview(QWidget):
         self.upload.setEnabled(enabled)
         self.remove.setEnabled(enabled and bool(data))
         if self._pixmap.isNull():
+            self.image.setFixedSize(220, 220)
             self.image.setPixmap(QPixmap())
             self.image.setText("Превью не добавлено" if enabled else "Выберите промт")
         else:
+            # Размер рамки повторяет пропорции изображения, в том числе для квадрата.
+            size = self._pixmap.size().scaled(220, 320, Qt.KeepAspectRatio)
+            self.image.setFixedSize(size)
             self.image.setPixmap(
-                self._pixmap.scaled(204, 244, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self._pixmap.scaled(size - QSize(2, 2), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             )
 
     def choose_image(self) -> None:
