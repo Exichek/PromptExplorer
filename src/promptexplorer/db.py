@@ -313,7 +313,7 @@ class DB:
             name = self._name(name)
             if prompt_id is not None and self.get_prompt(prompt_id, profile_id) is None:
                 raise ValueError("Промт не найден в выбранном профиле.")
-            type_id = self._type_id(profile_id, type_name)
+            type_id = self._type_id(profile_id, type_name.strip() or "Без категории")
             timestamp = now_iso()
             values = (name, description, positive, negative, lora, model, timestamp)
             if prompt_id is None:

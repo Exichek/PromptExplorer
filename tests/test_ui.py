@@ -176,3 +176,44 @@ def test_resources_in_frozen_package(tmp_path, monkeypatch):
     resource.write_bytes(b"icon")
     monkeypatch.setattr(utils, "__file__", str(package / "ui/utils.py"))
     assert utils.resource_path("resources/app.ico") == str(resource)
+
+
+@pytest.mark.parametrize("categories", [[], ["Портреты", "Пейзажи"]])
+def test_prompt_with_only_name_can_be_saved(qapp, db, monkeypatch, categories):
+    """Пустые дополнительные поля не мешают ни созданию, ни сохранению промта."""
+    from PySide6.QtWidgets import QDialog
+
+    def unexpected_warning(*args):
+        pytest.fail("Дополнительные поля не должны вызывать предупреждение")
+
+    monkeypatch.setattr(QMessageBox, "warning", unexpected_warning)
+    dialog = PromptDialog(categories, QIcon(), "light")
+    dialog.name.setText("Только название")
+    dialog._validate_then_accept()
+    assert dialog.result() == QDialog.Accepted
+    assert dialog.data()["type_name"] == ""
+    assert dialog.data()["model"] == ""
+    assert dialog.data()["description"] == ""
+    profile = db.create_profile("Работа")
+    pid = db.upsert_prompt(profile, None, **dialog.data())
+    saved = db.get_prompt(pid, profile)
+    assert saved.name == "Только название"
+    assert saved.type == "Без категории"
+    assert saved.model == saved.description == saved.positive == saved.negative == saved.lora == ""
+    editing = PromptDialog([saved.type], QIcon(), "light", saved)
+    editing.name.setText("Новое название")
+    editing._validate_then_accept()
+    assert editing.result() == QDialog.Accepted
+    db.upsert_prompt(profile, pid, **editing.data())
+    assert db.get_prompt(pid, profile).name == "Новое название"
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_empty_prompt_name_is_still_required(qapp, monkeypatch, name):
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    dialog = PromptDialog([], QIcon(), "light")
+    dialog.name.setText(name)
+    dialog._validate_then_accept()
+    assert warnings == ["Укажите название промта."]
+    assert dialog.result() == 0

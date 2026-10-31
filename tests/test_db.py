@@ -207,3 +207,14 @@ def test_migration_refuses_unknown_fields_without_data_loss(legacy_db):
     with pytest.raises(ValueError):
         DB(str(legacy_db))
     assert fingerprint(legacy_db) == before
+
+
+@pytest.mark.parametrize("category", ["", "   "])
+def test_empty_category_is_optional_and_survives_reopen(db, category):
+    profile = db.create_profile("Работа")
+    pid = db.upsert_prompt(profile, None, category, "Название", "", "", "", "", "")
+    with closing(DB(db.path)) as reopened:
+        saved = reopened.get_prompt(pid, profile)
+        assert saved.name == "Название"
+        assert saved.type == "Без категории"
+        assert saved.model == ""
