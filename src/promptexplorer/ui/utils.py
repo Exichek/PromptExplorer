@@ -1,59 +1,26 @@
 import os
-import sys
-from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QApplication, QDialog, QWidget
 
-from .constants import APP_NAME
-
-
-# ============================================================
-# Utils
-# ============================================================
 
 def resource_path(rel_path: str) -> str:
-
-    if getattr(sys, "frozen", False):
-        exe_dir = os.path.dirname(sys.executable)
-
-        p1 = os.path.join(exe_dir, rel_path)
-        if os.path.exists(p1):
-            return p1
-
-        base = getattr(sys, "_MEIPASS", exe_dir)
-        p2 = os.path.join(base, rel_path)
-
-        return p2 if os.path.exists(p2) else p1
-
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), rel_path)
-
-
-def app_data_dir() -> str:
-    if os.name == "nt":
-        base = os.getenv("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
-        path = os.path.join(base, APP_NAME)
-    else:
-        path = os.path.join(os.path.expanduser("~"), f".{APP_NAME.lower()}")
-
-    os.makedirs(path, exist_ok=True)
-    return path
-
-
-def now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Найти ресурс пакета в исходниках, установленном wheel или сборке PyInstaller."""
+    return str(Path(__file__).resolve().parents[1] / rel_path)
 
 
 def center_dialog(dlg: QDialog, parent: QWidget | None = None) -> None:
 
+    screen = (parent.screen() if parent else QApplication.primaryScreen()).availableGeometry()
     dlg.adjustSize()
+    dlg.resize(min(dlg.width(), screen.width()), min(dlg.height(), screen.height()))
 
     if parent:
         g = parent.frameGeometry()
         dlg.move(g.center() - dlg.rect().center())
     else:
-        screen = QApplication.primaryScreen().availableGeometry()
         dlg.move(screen.center() - dlg.rect().center())
 
 
@@ -116,6 +83,11 @@ def theme_qss(theme: str) -> str:
 
     QMainWindow, QDialog {{
         background: {bg};
+    }}
+
+    QScrollArea, QScrollArea > QWidget > QWidget {{
+        background: {bg};
+        border: 0px;
     }}
 
     QWidget#Card {{

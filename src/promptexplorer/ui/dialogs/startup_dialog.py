@@ -1,3 +1,5 @@
+from html import escape
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
@@ -6,23 +8,21 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
     QToolTip,
     QVBoxLayout,
-    QInputDialog,
 )
 
-from ..db import DB
+from ...db import DB
+from ...paths import app_data_dir
 from ..utils import theme_qss
 
 
-# ============================================================
-# Dialog: Startup profile selection (create / import / delete)
-# ============================================================
-
 class StartupDialog(QDialog):
+    """Выбор, создание, импорт и удаление локальных профилей."""
 
     def __init__(self, db: DB, icon: QIcon, theme: str):
         super().__init__()
@@ -33,10 +33,12 @@ class StartupDialog(QDialog):
         self.setWindowIcon(icon)
         self.setStyleSheet(theme_qss(theme))
 
-        self.copy_path_text = r"%APPDATA%/PromptExplorer"
+        self.copy_path_text = app_data_dir()
         self.info = QLabel(
-            'Выбери профиль или создай/импортируй. Профили хранятся в папке: '
-            f'<a href="copy_path">{self.copy_path_text}</a>')
+            "Выбери профиль или создай/импортируй. Профили хранятся в папке: "
+            f'<a href="copy_path">{escape(self.copy_path_text)}</a>'
+        )
+        self.info.setWordWrap(True)
         self.info.setObjectName("Hint")
         self.info.setTextFormat(Qt.RichText)
         self.info.setTextInteractionFlags(Qt.TextBrowserInteraction)
@@ -45,10 +47,10 @@ class StartupDialog(QDialog):
 
         self.profile_combo = QComboBox()
 
-        self.btn_continue = QPushButton("Продолжить")
-        self.btn_new = QPushButton("Создать новый профиль")
-        self.btn_import = QPushButton("Импорт профиля (из БД)")
-        self.btn_delete = QPushButton("Удалить профиль")
+        self.btn_continue = QPushButton("Открыть")
+        self.btn_new = QPushButton("Создать профиль")
+        self.btn_import = QPushButton("Импорт профиля")
+        self.btn_delete = QPushButton("Удалить")
 
         self.btn_continue.clicked.connect(self.on_continue)
         self.btn_new.clicked.connect(self.on_new)
@@ -66,7 +68,7 @@ class StartupDialog(QDialog):
         row.addWidget(self.btn_continue)
         layout.addLayout(row)
 
-        self.setMinimumWidth(780)
+        self.setMinimumWidth(620)
 
         self.reload_profiles()
 
@@ -142,7 +144,9 @@ class StartupDialog(QDialog):
             return
 
         items = [f"{pid}: {name} ({theme})" for pid, name, theme in profiles]
-        choice, ok = QInputDialog.getItem(self, "Импорт профиля", "Выбери профиль:", items, 0, False)
+        choice, ok = QInputDialog.getItem(
+            self, "Импорт профиля", "Выбери профиль:", items, 0, False
+        )
         if not ok or not choice:
             return
 

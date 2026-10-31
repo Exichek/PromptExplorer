@@ -1,41 +1,44 @@
-from PySide6.QtCore import Qt, QPoint, QSize, QSettings
-from PySide6.QtGui import QIcon
+import logging
+from datetime import datetime
+
+from PySide6.QtCore import QPoint, QSettings, QSize, Qt, QTimer
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QSplitter,
-    QVBoxLayout,
-    QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QLabel,
-    QPushButton,
-    QTextEdit,
-    QMessageBox,
+    QApplication,
+    QComboBox,
     QDialog,
     QFileDialog,
-    QTabWidget,
+    QHBoxLayout,
     QInputDialog,
-    QComboBox,
-    QToolBar,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
     QMenu,
+    QMessageBox,
+    QPushButton,
     QSizePolicy,
+    QSplitter,
+    QTabWidget,
+    QTextEdit,
+    QToolBar,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
-from .constants import APP_NAME, THEME_ICON_PX, THEME_BTN_SIZE
-from .db import DB
-from .models import Prompt
+from ..constants import APP_NAME, THEME_BTN_SIZE, THEME_ICON_PX
+from ..db import DB
+from ..models import Prompt
+from ..paths import now_iso
 from .dialogs.prompt_dialog import PromptDialog
-from .utils import center_dialog, now_iso, theme_qss
+from .utils import center_dialog, theme_qss
 
-
-# ============================================================
-# Main window
-# ============================================================
 
 class MainWindow(QMainWindow):
+    """Коллекция промтов, поиск, статистика и резервное копирование."""
 
     def __init__(
         self,
@@ -61,7 +64,7 @@ class MainWindow(QMainWindow):
         self.apply_theme()
 
         prof = self.db.get_profile(self.profile_id)
-        self.profile_name = prof["name"] if prof else "Unknown"
+        self.profile_name = prof["name"] if prof else "Неизвестный профиль"
         self.setWindowTitle(f"{APP_NAME} — {self.profile_name}")
         self.setWindowIcon(icon)
 
@@ -76,27 +79,27 @@ class MainWindow(QMainWindow):
         self._build_stats_tab()
 
         self.refresh_all()
+        geometry = self.settings.value("window_geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        splitter_state = self.settings.value("splitter_state")
+        if splitter_state:
+            self.splitter.restoreState(splitter_state)
+        for sequence, callback in (
+            ("Ctrl+F", self.search.setFocus),
+            ("Ctrl+N", self.create_prompt),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.activated.connect(callback)
 
-    # ---------------------------
-    # Window close confirmation
-    # ---------------------------
     def closeEvent(self, event):
-        r = QMessageBox.question(
-            self,
-            "Закрыть программу?",
-            "Вы уверены, что хотите закрыть PromptExplorer?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if r == QMessageBox.Yes:
-            event.accept()
-        else:
-            event.ignore()
+        self.settings.setValue("window_geometry", self.saveGeometry())
+        self.settings.setValue("splitter_state", self.splitter.saveState())
+        event.accept()
 
-    # ---------------------------
-    # Theme handling
-    # ---------------------------
     def apply_theme(self) -> None:
         from PySide6.QtWidgets import QApplication
+
         QApplication.instance().setStyleSheet(theme_qss(self.theme))
 
     def update_theme_button(self) -> None:
@@ -106,14 +109,14 @@ class MainWindow(QMainWindow):
                 self.theme_btn.setText("")
             else:
                 self.theme_btn.setIcon(QIcon())
-                self.theme_btn.setText("🌙")
+                self.theme_btn.setText("Т")
         else:
             if self.sun_icon and not self.sun_icon.isNull():
                 self.theme_btn.setIcon(self.sun_icon)
                 self.theme_btn.setText("")
             else:
                 self.theme_btn.setIcon(QIcon())
-                self.theme_btn.setText("☀️")
+                self.theme_btn.setText("С")
 
         self.theme_btn.setIconSize(QSize(THEME_ICON_PX, THEME_ICON_PX))
         self.theme_btn.setFixedSize(THEME_BTN_SIZE, THEME_BTN_SIZE)
@@ -124,9 +127,6 @@ class MainWindow(QMainWindow):
         self.apply_theme()
         self.update_theme_button()
 
-    # ---------------------------
-    # Toolbar
-    # ---------------------------
     def _build_toolbar(self) -> None:
         tb = QToolBar()
         tb.setMovable(False)
@@ -139,6 +139,9 @@ class MainWindow(QMainWindow):
         self.profile_combo = QComboBox()
         tb.addWidget(self.profile_combo)
         self.profile_combo.currentIndexChanged.connect(self.on_profile_changed)
+        backup_button = QPushButton("Резервная копия")
+        backup_button.clicked.connect(self.backup_database)
+        tb.addWidget(backup_button)
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -174,16 +177,20 @@ class MainWindow(QMainWindow):
             return
 
         self.profile_id = int(pid)
+        self.search.blockSignals(True)
+        self.search.clear()
+        self.search.blockSignals(False)
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        self.tree.blockSignals(False)
+        self.list.clear()
 
         prof = self.db.get_profile(self.profile_id)
-        self.profile_name = prof["name"] if prof else "Unknown"
+        self.profile_name = prof["name"] if prof else "Неизвестный профиль"
         self.setWindowTitle(f"{APP_NAME} — {self.profile_name}")
 
         self.refresh_all()
 
-    # ---------------------------
-    # UI helpers
-    # ---------------------------
     def _wrap_card(self, w: QWidget) -> QWidget:
         card = QWidget()
         card.setObjectName("Card")
@@ -194,39 +201,51 @@ class MainWindow(QMainWindow):
 
         return card
 
-    # ---------------------------
-    # Tabs build
-    # ---------------------------
     def _build_prompts_tab(self) -> None:
         page = QWidget()
         layout = QVBoxLayout(page)
 
         splitter = QSplitter(Qt.Horizontal)
+        self.splitter = splitter
 
-        # ---- left: types ----
         left_col = QWidget()
         left_layout = QVBoxLayout(left_col)
         left_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.btn_add_type = QPushButton("＋ Новый тип")
+        self.btn_add_type = QPushButton("+ Категория")
         self.btn_add_type.clicked.connect(self.add_type)
 
         self.tree = QTreeWidget()
+        self.tree.setMinimumWidth(170)
+        self.tree.setIndentation(0)
         self.tree.setHeaderHidden(True)
         self.tree.itemSelectionChanged.connect(self.on_type_changed)
 
-        # (rename/delete)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.on_type_context_menu)
 
         left_layout.addWidget(self.btn_add_type)
         left_layout.addWidget(self.tree)
 
-        # ---- middle: prompts list ----
+        middle = QWidget()
+        middle.setMinimumWidth(280)
+        middle_layout = QVBoxLayout(middle)
+        middle_layout.setContentsMargins(0, 0, 0, 0)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Поиск по коллекции · Ctrl+F")
+        self.search.setToolTip("Название, категория, описание, Positive, Negative, LoRA и модель")
+        self.search.setClearButtonEnabled(True)
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(180)
+        self.search.textChanged.connect(lambda: self.search_timer.start())
+        self.search_timer.timeout.connect(self.refresh_list)
         self.list = QListWidget()
         self.list.currentItemChanged.connect(self.on_prompt_selected)
+        self.list.itemDoubleClicked.connect(lambda: self.edit_prompt())
+        middle_layout.addWidget(self.search)
+        middle_layout.addWidget(self.list)
 
-        # ---- right: buttons + detail ----
         right = QWidget()
         r = QVBoxLayout(right)
 
@@ -249,16 +268,25 @@ class MainWindow(QMainWindow):
         btn_row.addStretch(1)
 
         r.addLayout(btn_row)
+        copy_row = QHBoxLayout()
+        self.copy_positive = QPushButton("Копировать Positive")
+        self.copy_negative = QPushButton("Копировать Negative")
+        self.copy_positive.clicked.connect(lambda: self.copy_prompt_field("positive"))
+        self.copy_negative.clicked.connect(lambda: self.copy_prompt_field("negative"))
+        copy_row.addWidget(self.copy_positive)
+        copy_row.addWidget(self.copy_negative)
+        copy_row.addStretch()
+        r.addLayout(copy_row)
         r.addWidget(self.detail)
 
-        # ---- splitter composition ----
         splitter.addWidget(self._wrap_card(left_col))
-        splitter.addWidget(self._wrap_card(self.list))
+        splitter.addWidget(self._wrap_card(middle))
         splitter.addWidget(self._wrap_card(right))
 
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
-        splitter.setStretchFactor(2, 4)
+        splitter.setSizes([210, 320, 670])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 0)
+        splitter.setStretchFactor(2, 1)
 
         layout.addWidget(splitter)
         self.tabs.addTab(page, "Промты")
@@ -272,35 +300,32 @@ class MainWindow(QMainWindow):
         self.stats_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         self.stats_list = QListWidget()
-        self.stats_list.itemSelectionChanged.connect(self.on_stats_selected)
-
-        self.stats_detail = QTextEdit()
-        self.stats_detail.setReadOnly(True)
 
         layout.addWidget(self._wrap_card(self.stats_label))
         layout.addWidget(self._wrap_card(self.stats_list))
-        layout.addWidget(self._wrap_card(self.stats_detail))
 
         self.tabs.addTab(page, "Статистика")
 
-    # ---------------------------
-    # Types / category logic
-    # ---------------------------
     def refresh_types(self) -> None:
+        selected_type = self.current_type_id()
+        self.tree.blockSignals(True)
         self.tree.clear()
 
-        # All: type_id = None
-        all_item = QTreeWidgetItem(["All"])
+        all_item = QTreeWidgetItem(["Все категории"])
         all_item.setData(0, Qt.UserRole, None)
         self.tree.addTopLevelItem(all_item)
+        selected_item = all_item
 
         for tid, name in self.db.list_types(self.profile_id):
             it = QTreeWidgetItem([name])
             it.setData(0, Qt.UserRole, tid)
             self.tree.addTopLevelItem(it)
+            if tid == selected_type:
+                selected_item = it
 
         self.tree.expandAll()
-        self.tree.setCurrentItem(all_item)
+        self.tree.setCurrentItem(selected_item)
+        self.tree.blockSignals(False)
 
     def current_type_id(self) -> int | None:
         it = self.tree.currentItem()
@@ -392,39 +417,36 @@ class MainWindow(QMainWindow):
         self.db.delete_type_and_prompts(self.profile_id, type_id)
         self.refresh_all()
 
-    # ---------------------------
-    # Prompts list / detail / stats
-    # ---------------------------
     def refresh_list(self) -> None:
+        selected_id = self.selected_prompt_id()
+        self.list.blockSignals(True)
         self.list.clear()
 
         type_id = self.current_type_id()
-        prompts = self.db.list_prompts(self.profile_id, type_id)
+        prompts = self.db.list_prompts(self.profile_id, type_id, self.search.text())
 
         for p in prompts:
             it = QListWidgetItem(f"[{p.type}] {p.name}")
             it.setData(Qt.UserRole, p.id)
             self.list.addItem(it)
+            if p.id == selected_id:
+                self.list.setCurrentItem(it)
 
-        if self.list.count() > 0:
+        if self.list.currentItem() is None and self.list.count() > 0:
             self.list.setCurrentRow(0)
-        else:
-            self.detail.setPlainText("Создайте промт.")
+        self.list.blockSignals(False)
+        self.on_prompt_selected(self.list.currentItem(), None)
+        self.statusBar().showMessage(f"Найдено промтов: {len(prompts)}")
 
     def refresh_stats(self) -> None:
         total = self.db.stats_total(self.profile_id)
-        self.stats_label.setText(f"Профиль: {self.profile_name}\nВсего промтов: {total}")
+        self.stats_label.setText(
+            f"Профиль: {self.profile_name}\nВсего промтов: {total}\nКатегорий: {len(self.db.list_types(self.profile_id))}"
+        )
 
         self.stats_list.clear()
-        for p in self.db.list_prompts(self.profile_id, None):
-            it = QListWidgetItem(f"[{p.type}] {p.name}")
-            it.setData(Qt.UserRole, p.id)
-            self.stats_list.addItem(it)
-
-        if self.stats_list.count() == 0:
-            self.stats_detail.setPlainText("Пока пусто.")
-        else:
-            self.stats_list.setCurrentRow(0)
+        for row in self.db.stats_by_type(self.profile_id):
+            self.stats_list.addItem(f"{row['name']} — {row['count']}")
 
     def refresh_all(self) -> None:
         self.refresh_types()
@@ -435,27 +457,69 @@ class MainWindow(QMainWindow):
         self.refresh_list()
 
     def on_prompt_selected(self, current: QListWidgetItem, prev: QListWidgetItem) -> None:
+        for button in (self.btn_edit, self.btn_del, self.copy_positive, self.copy_negative):
+            button.setEnabled(current is not None)
         if not current:
+            self.detail.setPlainText(
+                "Ничего не найдено." if self.search.text() else "Создайте промт."
+            )
             return
         pid = int(current.data(Qt.UserRole))
-        p = self.db.get_prompt(pid)
+        p = self.db.get_prompt(pid, self.profile_id)
         self.detail.setPlainText(self.render_prompt_text(p) if p else "Промт не найден.")
-
-    def on_stats_selected(self) -> None:
-        item = self.stats_list.currentItem()
-        if not item:
-            return
-        pid = int(item.data(Qt.UserRole))
-        p = self.db.get_prompt(pid)
-        self.stats_detail.setPlainText(self.render_prompt_text(p) if p else "Промт не найден.")
 
     def selected_prompt_id(self) -> int | None:
         item = self.list.currentItem()
         return int(item.data(Qt.UserRole)) if item else None
 
-    # ---------------------------
-    # CRUD for prompts
-    # ---------------------------
+    def select_prompt(self, prompt_id: int) -> None:
+        """Показать сохранённый промт, сохраняя фильтры, пока он в них виден."""
+        for index in range(self.list.count()):
+            item = self.list.item(index)
+            if item.data(Qt.UserRole) == prompt_id:
+                self.list.setCurrentItem(item)
+                return
+        prompt = self.db.get_prompt(prompt_id, self.profile_id)
+        if prompt is None:
+            return
+        self.search.clear()
+        for index in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(index)
+            if item.data(0, Qt.UserRole) is not None and item.text(0) == prompt.type:
+                self.tree.setCurrentItem(item)
+                break
+        self.refresh_list()
+        for index in range(self.list.count()):
+            item = self.list.item(index)
+            if item.data(Qt.UserRole) == prompt_id:
+                self.list.setCurrentItem(item)
+                return
+
+    def copy_prompt_field(self, field: str) -> None:
+        """Скопировать выбранную часть промта без заголовков и служебного текста."""
+        prompt = self.db.get_prompt(self.selected_prompt_id(), self.profile_id)
+        if prompt is not None:
+            QApplication.clipboard().setText(getattr(prompt, field))
+            self.statusBar().showMessage("Скопировано в буфер обмена", 2500)
+
+    def backup_database(self) -> None:
+        """Сохранить согласованную копию всех профилей через SQLite Backup API."""
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Резервная копия всех профилей",
+            f"PromptExplorer-{stamp}.sqlite3",
+            "SQLite (*.sqlite3)",
+        )
+        if not path:
+            return
+        try:
+            self.db.backup_to(path)
+            QMessageBox.information(self, "Готово", f"Резервная копия сохранена:\n{path}")
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Не удалось создать резервную копию")
+            QMessageBox.critical(self, "Ошибка резервного копирования", str(exc))
+
     def create_prompt(self) -> None:
         types = [name for _, name in self.db.list_types(self.profile_id)]
         dlg = PromptDialog(types, self.icon, self.theme, existing=None)
@@ -464,16 +528,24 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return
 
-        d = dlg.data()
-        self.db.upsert_prompt(self.profile_id, None, **d)
+        while True:
+            try:
+                pid = self.db.upsert_prompt(self.profile_id, None, **dlg.data())
+                break
+            except Exception as exc:
+                logging.getLogger(__name__).exception("Не удалось создать промт")
+                QMessageBox.critical(self, "Ошибка сохранения", str(exc))
+                if dlg.exec() != QDialog.Accepted:
+                    return
         self.refresh_all()
+        self.select_prompt(pid)
 
     def edit_prompt(self) -> None:
         pid = self.selected_prompt_id()
         if pid is None:
             return
 
-        p = self.db.get_prompt(pid)
+        p = self.db.get_prompt(pid, self.profile_id)
         if not p:
             return
 
@@ -484,9 +556,17 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return
 
-        d = dlg.data()
-        self.db.upsert_prompt(self.profile_id, pid, **d)
+        while True:
+            try:
+                self.db.upsert_prompt(self.profile_id, pid, **dlg.data())
+                break
+            except Exception as exc:
+                logging.getLogger(__name__).exception("Не удалось сохранить промт")
+                QMessageBox.critical(self, "Ошибка сохранения", str(exc))
+                if dlg.exec() != QDialog.Accepted:
+                    return
         self.refresh_all()
+        self.select_prompt(pid)
 
     def delete_prompt(self) -> None:
         pid = self.selected_prompt_id()
@@ -505,27 +585,25 @@ class MainWindow(QMainWindow):
         self.db.delete_prompt(self.profile_id, pid)
         self.refresh_all()
 
-    # ---------------------------
-    # Export
-    # ---------------------------
     def export_prompts(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Сохранить выгрузку",
             "prompts_export.txt",
-            "Text files (*.txt)",
+            "Текстовые файлы (*.txt)",
         )
         if not path:
             return
 
         type_id = self.current_type_id()
-        prompts = self.db.list_prompts(self.profile_id, type_id)
+        prompts = self.db.list_prompts(self.profile_id, type_id, self.search.text())
 
         header = [
             f"{APP_NAME} — экспорт промтов",
             f"Профиль: {self.profile_name}",
             f"Дата: {now_iso()}",
-            f"Фильтр: {'All' if type_id is None else self.db.get_type_name(self.profile_id, type_id)}",
+            f"Фильтр: {'Все категории' if type_id is None else self.db.get_type_name(self.profile_id, type_id)}",
+            f"Поиск: {self.search.text()}",
             "=" * 60,
             "",
         ]
@@ -545,28 +623,27 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка!", f"Не смог сохранить файл:\n{e}")
 
-    # ---------------------------
-    # Render helper
-    # ---------------------------
     def render_prompt_text(self, p: Prompt) -> str:
-        return "\n".join([
-            f"Name: {p.name}",
-            "",
-            f"Type: {p.type}",
-            "",
-            f"Model: {p.model}",
-            "",
-            f"LoRA: {p.lora}".rstrip(),
-            "",
-            "",
-            f"Описание: {p.description}",
-            "",
-            "",
-            "Positive:",
-            p.positive,
-            "",
-            "",
-            "Negative:",
-            p.negative,
-            "",
-        ])
+        return "\n".join(
+            [
+                f"Название: {p.name}",
+                "",
+                f"Категория: {p.type}",
+                "",
+                f"Модель: {p.model}",
+                "",
+                f"LoRA: {p.lora}".rstrip(),
+                "",
+                "",
+                f"Описание: {p.description}",
+                "",
+                "",
+                "Positive:",
+                p.positive,
+                "",
+                "",
+                "Negative:",
+                p.negative,
+                "",
+            ]
+        )
