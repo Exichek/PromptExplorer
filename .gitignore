@@ -8,6 +8,7 @@ __pycache__/
 build/
 dist/
 *.spec
+!PromptExplorer.spec
 *.manifest
 *.toc
 
@@ -30,3 +31,11 @@ dist/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Проверки и упаковка Python
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+local-library/

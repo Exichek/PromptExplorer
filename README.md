@@ -1,59 +1,84 @@
-# PromptExplorer v 0.9.0.0 beta
+# PromptExplorer 0.10.0
 
-Приложение на Python (PySide6) для хранения, редактирования и организации промтов  
-для Stable Diffusion, ComfyUI и других инструментов для генерации.
+Настольный менеджер промтов для Stable Diffusion, ComfyUI и других генераторов.
+Python, PySide6 и локальная SQLite. Приложение работает без аккаунта и сетевого сервиса.
 
-Профили, типы промтов (категории), создание / редактирование / удаление промтов,  
-статистика по профилю, экспорт промтов в `.txt`, локальная база данных (SQLite),  
-хранится в:
-- **Windows:** `%APPDATA%/PromptExplorer`
-- **Linux:** `~/.promptexplorer`
+## Возможности
 
----
+- Отдельные профили и категории.
+- Создание и редактирование промтов: модель, LoRA, описание, Positive и Negative.
+- Поиск по всем текстовым полям с поддержкой кириллицы.
+- Копирование Positive и Negative отдельными кнопками.
+- Импорт профиля из существующей базы без изменения исходного файла.
+- Резервные копии всей библиотеки и экспорт текущей выборки в txt.
+- Светлая и тёмная темы, статистика по категориям, сохранение размеров окна.
 
-A Python (PySide6) desktop application for storing, editing, and organizing prompts  
-for Stable Diffusion, ComfyUI, and similar tools.
+## Запуск из исходников
 
-Profiles, prompt types (categories), create / edit / delete prompts,  
-profile-based statistics, export prompts to `.txt`, local SQLite database  
-stored in:
-- **Windows:** `%APPDATA%/PromptExplorer`
-- **Linux:** `~/.promptexplorer`
-
----
-
-## How to use
-
-### 1. Установка зависимостей
-
-Python **3.11+**.  
+Нужен Python **3.11–3.14**. Команды выполняются из корня проекта.
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+```
 
-### Запуск с исходника
+Windows PowerShell:
 
-python run.py
+```powershell
+.venv\Scripts\Activate.ps1
+```
 
-OR 
+Linux:
 
-### Сборка приложения (Windows)
+```bash
+source .venv/bin/activate
+```
 
-python -m pip install pyinstaller
-python -m PyInstaller --clean --noconsole --name PromptExplorer --onedir `
-  --icon promptexplorer/resources/app.ico `
-  --add-data "promptexplorer/resources/app.ico;resources" `
-  --add-data "promptexplorer/resources/moon.png;resources" `
-  --add-data "promptexplorer/resources/sun.png;resources" `
-  run.py
+Установка и запуск:
 
-### Сборка приложения (Linux)
+```bash
+python -m pip install -r requirements.txt
+python -m promptexplorer
+```
 
-python -m pip install pyinstaller
-python -m PyInstaller --clean --name PromptExplorer --onedir \
-  --add-data "promptexplorer/resources/app.ico:resources" \
-  --add-data "promptexplorer/resources/moon.png:resources" \
-  --add-data "promptexplorer/resources/sun.png:resources" \
-  run.py
+После установки также доступны команда `promptexplorer` и запуск `python run.py`.
+
+## Управление
+
+- `Ctrl+F` — перейти к поиску.
+- `Ctrl+N` — создать промт.
+- Двойной щелчок по промту — редактировать.
+- `Ctrl+Enter` в редакторе — сохранить.
+- Контекстное меню категории — переименовать или удалить вместе с промтами.
+
+Экспорт учитывает выбранную категорию и строку поиска. Резервная копия включает все профили.
+
+## Где лежат данные
+
+- Windows: `%APPDATA%/PromptExplorer/promptexplorer.sqlite3`.
+- Linux: `~/.promptexplorer/promptexplorer.sqlite3`.
+
+Прежние папки сохранены: версия 0.10 обнаруживает существующую базу.
+Перед миграцией автоматически создаётся копия рядом с ней. Если копию сделать нельзя
+или структура базы неизвестна, обновление останавливается без частичного переноса данных.
+
+Для изолированной коллекции задайте переменную `PROMPTEXPLORER_DATA_DIR`. Например:
+
+```powershell
+$env:PROMPTEXPLORER_DATA_DIR = "$PWD\local-library"
+python -m promptexplorer
+```
+
+Эта папка может содержать личные промты — не добавляйте её в Git.
+
+## Разработка и сборка
+
+- [Устройство проекта](docs/architecture.md).
+- [Окружение, тесты и сборка](docs/development.md).
+- [Резервные копии и восстановление](docs/backups.md).
+- [История изменений](CHANGELOG.md).
+
+Работа идёт через `develop` и отдельные ветки. Основная ветка `main` обновляется после проверки.
+Документация, докстринги, комментарии и новые коммиты — на русском.
+
+Пакеты и приложение собираются автоматически в GitHub Actions. Для Windows переносится
+целиком папка `PromptExplorer`, включая `_internal`, а не один exe.
