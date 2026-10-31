@@ -1,5 +1,6 @@
 # Сборка настольного приложения для текущей операционной системы.
 from pathlib import Path
+import sys
 
 root = Path(SPECPATH)
 a = Analysis(
@@ -10,6 +11,12 @@ a = Analysis(
     excludes=['PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets', 'PySide6.QtPdf'],
     noarchive=False,
 )
+if sys.platform == 'win32':
+    # Qt использует системный ICU Windows. Одноимённые DLL из PATH (например,
+    # из Poppler) имеют другой набор экспортов и ломают загрузку QtCore.
+    a.binaries = [entry for entry in a.binaries
+                  if not (Path(entry[0]).name.lower().startswith('icu')
+                          and Path(entry[0]).suffix.lower() == '.dll')]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name='PromptExplorer',

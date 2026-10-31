@@ -124,3 +124,14 @@ def test_editor_does_not_discard_changes_without_confirmation(qapp, monkeypatch)
     monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
     dialog.reject()
     assert not dialog.isVisible()
+
+
+def test_resources_in_frozen_package(tmp_path, monkeypatch):
+    from promptexplorer.ui import utils
+
+    package = tmp_path / "_internal/promptexplorer"
+    resource = package / "resources/app.ico"
+    resource.parent.mkdir(parents=True)
+    resource.write_bytes(b"icon")
+    monkeypatch.setattr(utils, "__file__", str(package / "ui/utils.py"))
+    assert utils.resource_path("resources/app.ico") == str(resource)

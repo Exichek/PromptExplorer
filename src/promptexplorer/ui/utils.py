@@ -1,5 +1,5 @@
 import os
-import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap
@@ -7,20 +7,8 @@ from PySide6.QtWidgets import QApplication, QDialog, QWidget
 
 
 def resource_path(rel_path: str) -> str:
-
-    if getattr(sys, "frozen", False):
-        exe_dir = os.path.dirname(sys.executable)
-
-        p1 = os.path.join(exe_dir, rel_path)
-        if os.path.exists(p1):
-            return p1
-
-        base = getattr(sys, "_MEIPASS", exe_dir)
-        p2 = os.path.join(base, rel_path)
-
-        return p2 if os.path.exists(p2) else p1
-
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), rel_path)
+    """Найти ресурс пакета в исходниках, установленном wheel или сборке PyInstaller."""
+    return str(Path(__file__).resolve().parents[1] / rel_path)
 
 
 def center_dialog(dlg: QDialog, parent: QWidget | None = None) -> None:
