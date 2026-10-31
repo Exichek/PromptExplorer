@@ -170,6 +170,13 @@ def theme_qss(theme: str) -> str:
         color: {hint};
     }}
 
+    QLabel#Preview {{
+        background: {field};
+        border: 1px solid {border};
+        border-radius: 10px;
+        color: {hint};
+    }}
+
     QSplitter::handle {{
         background: {splitter};
     }}

@@ -17,3 +17,4 @@ class Prompt:
     model: str
     created_at: str
     updated_at: str
+    preview: bytes | None = None

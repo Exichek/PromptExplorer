@@ -217,3 +217,50 @@ def test_empty_prompt_name_is_still_required(qapp, monkeypatch, name):
     dialog._validate_then_accept()
     assert warnings == ["Укажите название промта."]
     assert dialog.result() == 0
+
+
+def test_preview_upload_switch_and_remove(window, qapp, tmp_path, monkeypatch):
+    """Превью привязано к записи, а не к исходному файлу или текущему виджету."""
+    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtWidgets import QFileDialog
+
+    path = tmp_path / "арт.png"
+    image = QImage(700, 900, QImage.Format_RGB32)
+    image.fill(QColor("#6a4389"))
+    assert image.save(str(path))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: (str(path), ""))
+    selected = window.selected_prompt_id()
+    window.preview.choose_image()
+    assert not window.preview.image.pixmap().isNull()
+    data = window.db.get_prompt(selected, window.profile_id).preview
+    assert data
+    path.unlink()
+    window.list.setCurrentRow(1)
+    assert window.preview.image.pixmap().isNull()
+    assert not window.preview.remove.isEnabled()
+    window.select_prompt(selected)
+    assert not window.preview.image.pixmap().isNull()
+    window.preview.remove.click()
+    assert window.db.get_prompt(selected, window.profile_id).preview is None
+    assert window.preview.image.pixmap().isNull()
+    window.search.setText("нет такого промта")
+    window.refresh_list()
+    assert not window.preview.upload.isEnabled()
+
+
+def test_invalid_image_keeps_saved_preview(window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from promptexplorer.ui.image_preview import thumbnail_from_file
+
+    saved = thumbnail_from_file(resource_path("resources/moon.png"))
+    window.save_preview(saved)
+    path = tmp_path / "ошибка.png"
+    path.write_text("Это не картинка", encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: (str(path), ""))
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    selected = window.selected_prompt_id()
+    window.preview.choose_image()
+    assert warnings
+    assert window.db.get_prompt(selected, window.profile_id).preview == saved
