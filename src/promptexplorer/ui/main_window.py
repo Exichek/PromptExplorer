@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from PySide6.QtCore import QPoint, QSettings, QSize, Qt, QTimer
-from PySide6.QtGui import QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -92,7 +92,18 @@ class MainWindow(QMainWindow):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(callback)
 
-    def closeEvent(self, event):
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Закрыть программу только после подтверждения пользователя."""
+        answer = QMessageBox.question(
+            self,
+            "Закрыть программу?",
+            "Вы точно хотите закрыть PromptExplorer?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            event.ignore()
+            return
         self.settings.setValue("window_geometry", self.saveGeometry())
         self.settings.setValue("splitter_state", self.splitter.saveState())
         event.accept()

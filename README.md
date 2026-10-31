@@ -1,4 +1,4 @@
-# PromptExplorer 0.10.0
+# PromptExplorer 0.10.1
 
 Настольный менеджер промтов для Stable Diffusion, ComfyUI и других генераторов.
 Python, PySide6 и локальная SQLite. Приложение работает без аккаунта и сетевого сервиса.

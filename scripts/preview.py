@@ -7,9 +7,9 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QLibraryInfo, QSettings, QTimer, QTranslator
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from promptexplorer.db import DB
 from promptexplorer.ui.dialogs.prompt_dialog import PromptDialog
@@ -24,6 +24,9 @@ def main():
     output = parser.parse_args().output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     app = QApplication([])
+    translator = QTranslator(app)
+    if translator.load("qtbase_ru", QLibraryInfo.path(QLibraryInfo.TranslationsPath)):
+        app.installTranslator(translator)
     if os.name == "nt":
         # Платформа offscreen не обнаруживает системные шрифты Windows сама.
         QFontDatabase.addApplicationFont(
@@ -86,7 +89,18 @@ def main():
             app.processEvents()
             startup.grab().save(str(output / "PromptExplorer-profiles.png"))
             startup.close()
+
+            def capture_exit_confirmation():
+                """Снять настоящий диалог и отменить закрытие демонстрационного окна."""
+                question = app.activeModalWidget()
+                question.grab().save(str(output / "PromptExplorer-exit.png"))
+                question.button(QMessageBox.No).click()
+
+            QTimer.singleShot(0, capture_exit_confirmation)
             window.close()
+            window.hide()
+            window.deleteLater()
+            app.processEvents()
         finally:
             db.close()
 

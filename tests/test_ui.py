@@ -3,6 +3,7 @@
 import pytest
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QMessageBox
 
 from promptexplorer.ui.dialogs.prompt_dialog import PromptDialog
 from promptexplorer.ui.dialogs.startup_dialog import StartupDialog
@@ -11,7 +12,7 @@ from promptexplorer.ui.utils import resource_path
 
 
 @pytest.fixture
-def window(qapp, db, tmp_path):
+def window(qapp, db, tmp_path, monkeypatch):
     profile = db.create_profile("Работа")
     for name, category in [("Первый", "Природа"), ("Второй", "Природа"), ("Третий", "Портрет")]:
         db.upsert_prompt(profile, None, category, name, "", f"Свет {name}", "Шум", "", "Модель")
@@ -20,7 +21,9 @@ def window(qapp, db, tmp_path):
     widget.show()
     qapp.processEvents()
     yield widget
-    widget.close()
+    with monkeypatch.context() as cleanup:
+        cleanup.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+        widget.close()
     widget.deleteLater()
     qapp.processEvents()
 
@@ -75,12 +78,50 @@ def test_saved_prompt_is_visible_after_category_change(window):
     assert window.search.text() == ""
 
 
-def test_theme_and_geometry_are_saved(window):
+def test_theme_and_geometry_are_saved(window, monkeypatch):
     window.toggle_theme()
     assert window.settings.value("ui_theme") == "dark"
-    window.close()
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+    assert window.close()
     assert window.settings.value("window_geometry")
     assert window.settings.value("splitter_state")
+
+
+@pytest.mark.parametrize("answer", [QMessageBox.Yes, QMessageBox.No, QMessageBox.NoButton])
+def test_main_window_closes_only_after_confirmation(window, monkeypatch, answer):
+    """Отмена выхода сохраняет окно и настройки; подтверждение разрешает закрытие."""
+    questions = []
+
+    def respond(*args):
+        questions.append(args)
+        return answer
+
+    monkeypatch.setattr(QMessageBox, "question", respond)
+    accepted = answer == QMessageBox.Yes
+    assert window.close() == accepted
+    assert window.isVisible() != accepted
+    assert questions[0][2] == "Вы точно хотите закрыть PromptExplorer?"
+    assert questions[0][-1] == QMessageBox.No
+    assert window.settings.contains("window_geometry") == accepted
+    assert window.settings.contains("splitter_state") == accepted
+
+
+def test_escape_cancels_real_exit_dialog(window, qapp):
+    """Escape закрывает вопрос, но оставляет главное окно программы открытым."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtTest import QTest
+
+    observed = []
+
+    def cancel():
+        dialog = qapp.activeModalWidget()
+        observed.append(isinstance(dialog, QMessageBox))
+        QTest.keyClick(dialog, Qt.Key_Escape)
+
+    QTimer.singleShot(0, cancel)
+    assert not window.close()
+    assert observed == [True]
+    assert window.isVisible()
 
 
 def test_resources_and_dialogs(qapp, db, tmp_path, monkeypatch):
