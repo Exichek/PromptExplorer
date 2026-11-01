@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from ..constants import APP_NAME, THEME_BTN_SIZE, THEME_ICON_PX
 from ..db import DB
+from ..metadata import GENERATION_FIELDS
 from ..models import Prompt
 from ..paths import now_iso
 from .dialogs.prompt_dialog import PromptDialog
@@ -656,7 +657,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка!", f"Не смог сохранить файл:\n{e}")
 
     def render_prompt_text(self, p: Prompt) -> str:
-        return "\n".join(
+        text = "\n".join(
             [
                 f"Название: {p.name}",
                 "",
@@ -679,3 +680,9 @@ class MainWindow(QMainWindow):
                 "",
             ]
         )
+        if p.metadata:
+            captions = {key: caption for key, caption, _ in GENERATION_FIELDS}
+            text += "\nПараметры генерации:\n" + "\n".join(
+                f"{captions.get(key, key)}: {value}" for key, value in p.metadata.items()
+            )
+        return text

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # ============================================================
 # Модель промта
@@ -18,3 +18,4 @@ class Prompt:
     created_at: str
     updated_at: str
     preview: bytes | None = None
+    metadata: dict[str, str] = field(default_factory=dict)

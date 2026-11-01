@@ -1,6 +1,7 @@
 """Читаемая карточка промта с ресурсами, отдельными секциями и копированием."""
 
 import re
+from html import escape
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -15,7 +16,35 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..metadata import GENERATION_FIELDS
 from ..models import Prompt
+from .flow_layout import FlowLayout
+
+
+def lora_resources(value: str) -> list[tuple[str, str | None]]:
+    """Отделить явно заданный вес LoRA, не изменяя строку, сохранённую в промте."""
+    numeric = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    # Десятичная запятая после двоеточия не должна разделять два ресурса.
+    display = re.sub(r"(:\s*[+-]?\d+),(\d+)(?=\s*(?:>|[,;\n]|$))", r"\1.\2", value)
+    result = []
+    for resource in re.split(r"[,;\n]+", display):
+        original = resource.strip()
+        if not original:
+            continue
+        tag = re.fullmatch(r"<lora:(.+)>", original, re.IGNORECASE)
+        body = tag.group(1) if tag else original
+        incomplete = original.startswith("<") and tag is None
+        match = (
+            None
+            if re.match(r"\w+://", body) or incomplete
+            else re.fullmatch(rf"(.+):\s*({numeric})", body)
+        )
+        if match and match.group(1).strip():
+            weight = re.sub(r"^([+-]?)\.", r"\g<1>0.", match.group(2))
+            result.append((match.group(1).strip(), weight))
+        else:
+            result.append((original, None))
+    return result
 
 
 def text_label(text: str = "", name: str = "PromptText") -> QLabel:
@@ -126,6 +155,15 @@ class PromptDetails(QScrollArea):
             "negative": TextSection("Negative prompt"),
         }
         self.updated = text_label("", "Hint")
+        self.metadata_box = QWidget()
+        metadata_layout = QVBoxLayout(self.metadata_box)
+        metadata_layout.setContentsMargins(0, 0, 0, 0)
+        metadata_title = QLabel("Параметры генерации")
+        metadata_title.setObjectName("SectionTitle")
+        self.metadata_chips = QWidget()
+        self.metadata_flow = FlowLayout(self.metadata_chips)
+        metadata_layout.addWidget(metadata_title)
+        metadata_layout.addWidget(self.metadata_chips)
         content.addWidget(self.title)
         content.addWidget(self.category)
         content.addWidget(resources_title)
@@ -138,6 +176,7 @@ class PromptDetails(QScrollArea):
             content.addWidget(separator)
             content.addWidget(section)
             section.copied.connect(self.copied.emit)
+        content.addWidget(self.metadata_box)
         content.addWidget(self.updated)
         layout.addWidget(self.empty)
         layout.addWidget(self.content)
@@ -158,7 +197,7 @@ class PromptDetails(QScrollArea):
         """Вернуть полные данные без декоративного оформления и сокращений."""
         return self._plain_text
 
-    def _resource(self, value: str, kind: str) -> None:
+    def _resource(self, value: str, kind: str, weight: str | None = None) -> None:
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -168,6 +207,12 @@ class PromptDetails(QScrollArea):
         badge.setObjectName("ResourceBadge")
         layout.addWidget(label, 1)
         layout.addWidget(badge, 0, Qt.AlignTop)
+        if weight is not None:
+            weight_badge = QLabel(weight)
+            weight_badge.setObjectName("WeightBadge")
+            weight_badge.setAlignment(Qt.AlignCenter)
+            weight_badge.setToolTip("Вес LoRA")
+            layout.addWidget(weight_badge, 0, Qt.AlignTop)
         self.resources.addWidget(row)
 
     def set_prompt(self, prompt: Prompt) -> None:
@@ -193,14 +238,29 @@ class PromptDetails(QScrollArea):
             item.widget().deleteLater()
         if prompt.model:
             self._resource(prompt.model, "CHECKPOINT")
-        for resource in re.split(r"[,\n]+", prompt.lora):
-            if resource.strip():
-                self._resource(resource.strip(), "LORA")
+        for resource, weight in lora_resources(prompt.lora):
+            self._resource(resource, "LORA", weight)
         if not prompt.model and not prompt.lora.strip():
             self.resources.addWidget(text_label("Модель и LoRA не указаны", "Hint"))
         self.description.setText(prompt.description)
         self.description.setVisible(bool(prompt.description))
         self.sections["positive"].set_text(prompt.positive)
         self.sections["negative"].set_text(prompt.negative)
+        while self.metadata_flow.count():
+            item = self.metadata_flow.takeAt(0)
+            item.widget().hide()
+            item.widget().deleteLater()
+        labels = {key: caption for key, caption, _ in GENERATION_FIELDS}
+        ordered = [key for key, _, _ in GENERATION_FIELDS if key in prompt.metadata]
+        ordered.extend(key for key in prompt.metadata if key not in labels)
+        for key in ordered:
+            chip = text_label(
+                f"{labels.get(key, key.upper())}: {prompt.metadata[key].upper()}", "MetadataBadge"
+            )
+            chip.setMargin(0)
+            chip.setIndent(0)
+            chip.setToolTip("<qt>" + escape(prompt.metadata[key]) + "</qt>")
+            self.metadata_flow.addWidget(chip)
+        self.metadata_box.setVisible(bool(prompt.metadata))
         self.updated.setText(f"Обновлён: {prompt.updated_at}")
         self.verticalScrollBar().setValue(0)

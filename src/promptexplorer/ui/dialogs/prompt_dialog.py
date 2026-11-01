@@ -1,3 +1,5 @@
+from typing import Any
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -6,6 +8,8 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGridLayout,
+    QGroupBox,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -15,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...metadata import GENERATION_FIELDS
 from ...models import Prompt
 from ..utils import theme_qss
 
@@ -59,7 +64,7 @@ class PromptDialog(QDialog):
         self.type.setPlaceholderText("Необязательно — Без категории")
         self.model.setPlaceholderText("Необязательно, например SDXL")
 
-        self.lora.setPlaceholderText("Через запятую или построчно")
+        self.lora.setPlaceholderText("Построчно или через запятую: style:0.4 или <lora:style:0.4>")
         self.description.setPlaceholderText("Описание: чтобы не запутаться, что это за промт")
         self.positive.setPlaceholderText("Positive: ключевые слова/теги, описание сцены")
         self.negative.setPlaceholderText("Negative: что исключить")
@@ -72,6 +77,29 @@ class PromptDialog(QDialog):
         form.addRow("Описание:", self.description)
         form.addRow("Positive:", self.positive)
         form.addRow("Negative:", self.negative)
+        metadata_group = QGroupBox("Параметры генерации · необязательно")
+        metadata_group.setObjectName("MetadataEditor")
+        metadata_grid = QGridLayout(metadata_group)
+        self.metadata_inputs = {}
+        for index, (key, caption, placeholder) in enumerate(GENERATION_FIELDS):
+            field = QWidget()
+            field_layout = QVBoxLayout(field)
+            field_layout.setContentsMargins(0, 0, 0, 0)
+            label = QLabel(caption)
+            label.setObjectName("MetadataCaption")
+            control = QLineEdit()
+            control.setObjectName("MetadataInput")
+            control.setPlaceholderText(placeholder)
+            label.setBuddy(control)
+            field_layout.addWidget(label)
+            field_layout.addWidget(control)
+            self.metadata_inputs[key] = control
+            metadata_grid.addWidget(field, index // 2, index % 2)
+        form.addRow(metadata_group)
+        known = set(self.metadata_inputs)
+        self._extra_metadata = (
+            {k: v for k, v in existing.metadata.items() if k not in known} if existing else {}
+        )
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         self.buttons.button(QDialogButtonBox.Save).setText("Сохранить")
@@ -106,6 +134,8 @@ class PromptDialog(QDialog):
             self.description.setPlainText(existing.description)
             self.positive.setPlainText(existing.positive)
             self.negative.setPlainText(existing.negative)
+            for key, control in self.metadata_inputs.items():
+                control.setText(existing.metadata.get(key, ""))
         self._initial_data = self.data()
 
     def reject(self) -> None:
@@ -128,7 +158,7 @@ class PromptDialog(QDialog):
             return
         self.accept()
 
-    def data(self) -> dict[str, str]:
+    def data(self) -> dict[str, Any]:
         return {
             "type_name": self.type.currentText().strip(),
             "name": self.name.text().strip(),
@@ -137,4 +167,12 @@ class PromptDialog(QDialog):
             "description": self.description.toPlainText().strip(),
             "positive": self.positive.toPlainText().strip(),
             "negative": self.negative.toPlainText().strip(),
+            "metadata": {
+                **self._extra_metadata,
+                **{
+                    key: control.text().strip()
+                    for key, control in self.metadata_inputs.items()
+                    if control.text().strip()
+                },
+            },
         }

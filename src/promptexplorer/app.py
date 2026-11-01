@@ -101,7 +101,16 @@ def main() -> int:
         if smoke:
             profile = db.create_profile("Проверка сборки")
             db.upsert_prompt(
-                profile, None, "Проверка", "Тестовый промт", "", "Свет", "Шум", "", "SDXL"
+                profile,
+                None,
+                "Проверка",
+                "Тестовый промт",
+                "",
+                "Свет",
+                "Шум",
+                "пример:0.4",
+                "SDXL",
+                metadata={"steps": "40", "seed": "-1"},
             )
             startup.reload_profiles()
             QTimer.singleShot(0, startup.on_continue)
@@ -123,6 +132,8 @@ def main() -> int:
             if window.list.count() != 1 or icon.isNull():
                 raise RuntimeError("Проверка сборки: промт или ресурсы недоступны.")
             window.toggle_theme()
+            if window.detail.metadata_flow.count() != 2:
+                raise RuntimeError("Проверка сборки: параметры генерации недоступны.")
             window.save_preview(thumbnail_from_file(resource_path("resources/moon.png")))
             if window.preview.image.pixmap().isNull():
                 raise RuntimeError("Проверка сборки: превью недоступно.")
