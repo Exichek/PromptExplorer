@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from .metadata import read_metadata, write_metadata
 from .models import Prompt
 from .paths import now_iso
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 FIELDS = (
     "name",
@@ -23,7 +24,7 @@ FIELDS = (
     "created_at",
     "updated_at",
 )
-COLUMNS = "p.id,t.name AS type,p.name,p.description,p.positive,p.negative,p.lora,p.model,p.created_at,p.updated_at"
+COLUMNS = "p.id,t.name AS type,p.name,p.description,p.positive,p.negative,p.lora,p.model,p.created_at,p.updated_at,p.metadata"
 PROMPTS_FROM = " FROM prompts p JOIN types t ON t.id=p.type_id AND t.profile_id=p.profile_id"
 SELECT = "SELECT " + COLUMNS + PROMPTS_FROM
 SELECT_WITH_PREVIEW = "SELECT " + COLUMNS + ",p.preview" + PROMPTS_FROM
@@ -44,7 +45,11 @@ def _snapshot(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         actual = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if not columns <= actual:
             raise ValueError(f"Неподдерживаемая структура таблицы {table}.")
-        optional = {"profiles": {"theme"}, "types": {"profile_id"}, "prompts": {"preview"}}
+        optional = {
+            "profiles": {"theme"},
+            "types": {"profile_id"},
+            "prompts": {"preview", "metadata"},
+        }
         if actual - columns - optional[table]:
             raise ValueError(f"Неизвестные поля таблицы {table}; файл не изменён.")
         result[table] = [dict(r) for r in conn.execute(f"SELECT * FROM {table}")]
@@ -120,6 +125,7 @@ class DB:
                type_id INTEGER NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL,
                positive TEXT NOT NULL,negative TEXT NOT NULL,lora TEXT NOT NULL,model TEXT NOT NULL,
                created_at TEXT NOT NULL,updated_at TEXT NOT NULL,preview BLOB,
+               metadata TEXT NOT NULL DEFAULT '{}',
                FOREIGN KEY(type_id,profile_id) REFERENCES types(id,profile_id) ON DELETE CASCADE)""",
             "CREATE INDEX prompts_profile_updated ON prompts(profile_id,updated_at DESC,id DESC)",
             "CREATE INDEX prompts_profile_type ON prompts(profile_id,type_id)",
@@ -155,10 +161,14 @@ class DB:
             )
         with self._transaction():
             data = _snapshot(self.conn)
-            if version == 1:
+            if version in (1, 2):
                 if self.conn.execute("PRAGMA foreign_key_check").fetchone():
                     raise ValueError("В базе нарушены связи данных. Обновление отменено.")
-                self.conn.execute("ALTER TABLE prompts ADD COLUMN preview BLOB")
+                if version == 1:
+                    self.conn.execute("ALTER TABLE prompts ADD COLUMN preview BLOB")
+                self.conn.execute(
+                    "ALTER TABLE prompts ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'"
+                )
                 self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 return
             for table in ("prompts", "types", "profiles"):
@@ -283,10 +293,10 @@ class DB:
             sql += " AND p.type_id=?"
             args.append(type_id)
         if search.strip():
-            sql += " AND instr(casefold(p.name||' '||t.name||' '||p.description||' '||p.positive||' '||p.negative||' '||p.lora||' '||p.model),casefold(?))>0"
+            sql += " AND instr(casefold(p.name||' '||t.name||' '||p.description||' '||p.positive||' '||p.negative||' '||p.lora||' '||p.model||' '||p.metadata),casefold(?))>0"
             args.append(search.strip())
         return [
-            Prompt(**dict(r))
+            self._prompt(r)
             for r in self.conn.execute(sql + " ORDER BY p.updated_at DESC,p.id DESC", args)
         ]
 
@@ -298,19 +308,26 @@ class DB:
             sql += " AND p.profile_id=?"
             args.append(profile_id)
         row = self.conn.execute(sql, args).fetchone()
-        return Prompt(**dict(row)) if row else None
+        return self._prompt(row) if row else None
+
+    @staticmethod
+    def _prompt(row: sqlite3.Row) -> Prompt:
+        data = dict(row)
+        data["metadata"] = read_metadata(data.get("metadata"))
+        return Prompt(**data)
 
     def _insert_prompt(
         self, profile_id: int, type_id: int, data: dict[str, Any], prompt_id: int | None = None
     ) -> int:
         return self.conn.execute(
-            "INSERT INTO prompts(id,profile_id,type_id,name,description,positive,negative,lora,model,created_at,updated_at,preview) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO prompts(id,profile_id,type_id,name,description,positive,negative,lora,model,created_at,updated_at,preview,metadata) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 prompt_id,
                 profile_id,
                 type_id,
                 *(data[field] for field in FIELDS),
                 self._validate_preview(data.get("preview")),
+                write_metadata(data.get("metadata")),
             ),
         ).lastrowid
 
@@ -343,6 +360,7 @@ class DB:
         negative: str,
         lora: str,
         model: str,
+        metadata: dict[str, str] | None = None,
     ) -> int:
         with self._transaction():
             self._require_profile(profile_id)
@@ -354,11 +372,14 @@ class DB:
             values = (name, description, positive, negative, lora, model, timestamp)
             if prompt_id is None:
                 data = dict(zip(FIELDS, (*values[:-1], timestamp, timestamp), strict=True))
+                data["metadata"] = metadata
                 return self._insert_prompt(profile_id, type_id, data)
+            if metadata is None:
+                metadata = self.get_prompt(prompt_id, profile_id).metadata
             self.conn.execute(
                 """UPDATE prompts SET type_id=?,name=?,description=?,positive=?,
-                negative=?,lora=?,model=?,updated_at=? WHERE id=? AND profile_id=?""",
-                (type_id, *values, prompt_id, profile_id),
+                negative=?,lora=?,model=?,updated_at=?,metadata=? WHERE id=? AND profile_id=?""",
+                (type_id, *values, write_metadata(metadata), prompt_id, profile_id),
             )
             return prompt_id
 

@@ -37,5 +37,5 @@ def test_version_does_not_create_data(tmp_path):
         timeout=15,
     )
     assert result.returncode == 0
-    assert b"0.10.2" in result.stdout
+    assert b"0.10.3" in result.stdout
     assert not directory.exists()

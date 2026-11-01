@@ -147,10 +147,25 @@ def test_export_uses_search(window, tmp_path, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(output), ""))
     monkeypatch.setattr(QMessageBox, "information", lambda *args: QMessageBox.Ok)
     window.search.setText("Второй")
+    pid = next(p.id for p in window.db.list_prompts(window.profile_id) if p.name == "Второй")
+    window.db.upsert_prompt(
+        window.profile_id,
+        pid,
+        "Природа",
+        "Второй",
+        "",
+        "",
+        "",
+        "",
+        "",
+        metadata={"sampler": "Euler A", "seed": "147572794"},
+    )
     window.export_prompts()
     content = output.read_text(encoding="utf-8")
     assert "Название: Второй" in content
     assert "Название: Первый" not in content
+    assert "SAMPLER: Euler A" in content
+    assert "SEED: 147572794" in content
 
 
 def test_editor_does_not_discard_changes_without_confirmation(qapp, monkeypatch):

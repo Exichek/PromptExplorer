@@ -103,6 +103,7 @@ def test_migration_from_schema_one_keeps_ids_and_creates_backup(tmp_path):
         types = original.list_types(profile)
     with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute("ALTER TABLE prompts DROP COLUMN preview")
+        conn.execute("ALTER TABLE prompts DROP COLUMN metadata")
         conn.execute("PRAGMA user_version=1")
     with closing(sqlite3.connect(path)) as conn:
         before = list(conn.iterdump())

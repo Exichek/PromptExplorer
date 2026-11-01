@@ -110,6 +110,18 @@ def main():
                 "blurry, low quality, harsh contrast, oversaturated colors, artifacts",
                 "architectural-detail:0.6\nnight-lighting:0.4",
                 "SDXL 1.0",
+                metadata={
+                    "workflow": "img2img:hires-fix",
+                    "priority": "low",
+                    "output_format": "JPEG",
+                    "sampler": "Euler A",
+                    "cfg_scale": "4",
+                    "steps": "40",
+                    "clip_skip": "2",
+                    "seed": "147572794",
+                    "denoise": "0.5",
+                    "quantity": "1",
+                },
             )
             window.select_prompt(selected)
             window.save_preview(thumbnail_from_file(str(art_path)))
@@ -118,6 +130,10 @@ def main():
             window.toggle_theme()
             app.processEvents()
             window.grab().save(str(output / "PromptExplorer-dark.png"))
+            window.detail.verticalScrollBar().setValue(window.detail.verticalScrollBar().maximum())
+            app.processEvents()
+            window.grab().save(str(output / "PromptExplorer-metadata.png"))
+            window.detail.verticalScrollBar().setValue(0)
             square = art.copy(0, 64, 512, 512)
             square_path = Path(folder) / "square.png"
             square.save(str(square_path))
@@ -135,12 +151,18 @@ def main():
             app.processEvents()
             window.grab().save(str(output / "PromptExplorer-stats.png"))
             dialog = PromptDialog(
-                ["Пейзажи", "Портреты"], icon, "dark", db.list_prompts(profile)[0]
+                ["Пейзажи", "Портреты"], icon, "dark", db.get_prompt(selected, profile)
             )
             dialog.resize(700, 680)
             dialog.show()
             app.processEvents()
             dialog.grab().save(str(output / "PromptExplorer-editor.png"))
+            from PySide6.QtWidgets import QScrollArea
+
+            fields_scroll = dialog.findChild(QScrollArea)
+            fields_scroll.verticalScrollBar().setValue(fields_scroll.verticalScrollBar().maximum())
+            app.processEvents()
+            dialog.grab().save(str(output / "PromptExplorer-metadata-editor.png"))
             dialog.close()
             startup = StartupDialog(db, icon, "light")
             startup.show()

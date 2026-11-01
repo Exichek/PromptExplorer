@@ -61,6 +61,7 @@ def theme_qss(theme: str) -> str:
         menu_bg = "#23262d"
         accent = "#82c8ff"
         badge_bg = "#223b50"
+        weight_bg = "#383e48"
     else:
         bg = "#eef1f6"
         card = "#ffffff"
@@ -77,6 +78,7 @@ def theme_qss(theme: str) -> str:
         menu_bg = "#ffffff"
         accent = "#22689c"
         badge_bg = "#e3f0fb"
+        weight_bg = "#e8ebf0"
 
     return f"""
     QWidget {{
@@ -220,6 +222,23 @@ def theme_qss(theme: str) -> str:
     QLabel#ResourceBadge {{
         background: {badge_bg}; color: {accent}; border-radius: 4px;
         padding: 3px 7px; font-size: 8pt; font-weight: 600;
+    }}
+    QLabel#WeightBadge {{
+        background: {weight_bg}; color: {text}; border-radius: 4px;
+        padding: 3px 8px; font-family: "Segoe UI"; font-size: 8pt; font-weight: 700;
+        min-width: 22px;
+    }}
+    QLabel#MetadataBadge, QLabel#MetadataCaption {{
+        color: {accent}; font-family: "Segoe UI"; font-size: 8pt; font-weight: 700;
+    }}
+    QLabel#MetadataBadge {{ background: {badge_bg}; border-radius: 4px; padding: 3px 7px; }}
+    QLineEdit#MetadataInput {{
+        color: {accent}; background: {badge_bg}; font-family: "Segoe UI";
+        font-size: 9pt; font-weight: 600; border-radius: 5px; padding: 6px;
+    }}
+    QGroupBox#MetadataEditor {{
+        color: {hint}; border: 1px solid {border}; border-radius: 8px;
+        margin-top: 12px; padding: 14px 10px 10px 10px;
     }}
     QFrame#SectionSeparator {{ background: {border}; border: none; }}
     QPushButton#CopyButton, QPushButton#TextToggle {{
